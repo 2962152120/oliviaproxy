@@ -1,0 +1,8 @@
+[20:14:09.952] Loading script D:\OliviaProxy\olivia_letter_proxy.py
+[20:14:09.957] HTTP(S) proxy listening at *:8080.
+[20:14:11.755][127.0.0.1:65257] client connect
+[20:14:11.816][127.0.0.1:65257] server connect toy-cnbeta01.olivia.miyoushe.com:443 (36.150.29.114:443)
+[20:14:11.942] probe: host='toy-cnbeta01.olivia.miyoushe.com' path='/toy/letter/list?pageSize=20'
+[20:14:11.944] INTERCEPT GET list
+127.0.0.1:65257: GET https://toy-cnbeta01.olivia.miyoushe.com/toy/letter/lis¡­
+              << 200 OK 44b

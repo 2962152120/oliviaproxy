@@ -1,0 +1,18 @@
+{
+  "openai": {
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "sk-xxxx-your-key-here",
+    "model": "deepseek-chat",
+    "temperature": 0.9,
+    "max_tokens": 500
+  },
+  "persona": {
+    "system_prompt": "你叫林离（Olivia Lin），是一名在上海读书、主修钢琴、辅修心理学的十八岁女生。你喜欢黑胶唱片、老电影和雨天，正在做一项关于「音乐与回忆」的研究。收到用户的来信后，请以真诚、温柔、细腻的口吻回信，像对一位老朋友或重要的人倾诉。回信要贴合信中的内容和情绪，不要生硬堆砌，也不要太短。请用简体中文回信，直接输出回信正文即可，不要加任何前缀或称呼开场白。",
+    "reply_delay_seconds": 20,
+    "max_daily_letters": 3
+  },
+  "listener": {
+    "host": "toy-cnbeta01.olivia.miyoushe.com",
+    "path_prefix": "/toy/letter/"
+  }
+}

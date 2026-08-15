@@ -1,0 +1,10 @@
+[20:23:37.799] Loading script C:\Users\ASUS\AppData\Local\Temp\opencode\diag2_proxy.py
+[20:23:37.811] HTTP(S) proxy listening at *:8080.
+[20:23:38.347][127.0.0.1:59822] client connect
+[20:23:38.415][127.0.0.1:59822] server connect toy-cnbeta01.olivia.miyoushe.com:443 (36.150.29.114:443)
+WRAP: path='/toy/letter/list?pageSize=20' host='toy-cnbeta01.olivia.miyoushe.com'
+WRAP: endpoint='list' method='GET'
+probe: host='toy-cnbeta01.olivia.miyoushe.com' pretty='toy-cnbeta01.olivia.miyoushe.com' path='/toy/letter/list?pageSize=20'
+INTERCEPT GET list path='/toy/letter/list?pageSize=20'
+127.0.0.1:59822: GET https://toy-cnbeta01.olivia.miyoushe.com/toy/letter/lis¡­
+              << 200 OK 44b
