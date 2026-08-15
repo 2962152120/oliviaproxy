@@ -10,6 +10,11 @@
 - **核心功能已全部打通并验证**：App 登录成功、进入主界面、写信/重发/每日上限均正常
 - 登录方案：`/signIn` 等接口在 addon 中 mock 返回 `{"code":0,"message":"","data":{}}`；mitmproxy 根证书需安装到系统（本机已装，用户级+机器级）
 - letter 拦截：addon 拦截 `/toy/letter/*`（list/detail/send/resend/unread_count/share），返回模拟数据，AI 回信走 `generate_reply` 后台线程
+- **记忆系统（1.0.7 新增）**：AI 记住自己说过的话 + 用户说过的话，持久化到 `memory.json`
+  - `remember(role, content)`：写入历史，超 `max_entries` 后最老的进 `overflow`
+  - 每次回复成功后调 `compress_memory()`：把 overflow + 旧摘要用 AI 压缩成一条新摘要（进 `compressed`），失败则恢复 overflow 不丢记忆
+  - 回信时 `build_memory_messages()` 把 compressed + history 注入 OpenAI messages（compressed 为 system 角色、history 保留原角色）
+  - 配置在 config.json `memory.max_entries`(默认30) / `max_chars`(默认3000)
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
 - `OliviaProxy-Setup-1.0.7.exe`：安装包（Inno Setup）

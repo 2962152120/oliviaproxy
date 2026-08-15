@@ -4,6 +4,7 @@ __pycache__/
 
 # 隐私/运行时状态（不纳入版本控制）
 letters.json
+memory.json
 legal_agreed.txt
 proxy_backup.txt
 

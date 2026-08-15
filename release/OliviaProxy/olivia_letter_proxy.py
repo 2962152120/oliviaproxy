@@ -10,6 +10,7 @@ from mitmproxy import http, ctx
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 DATA_PATH = os.path.join(BASE_DIR, "letters.json")
+MEMORY_PATH = os.path.join(BASE_DIR, "memory.json")
 
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     CONFIG = json.load(f)
@@ -17,6 +18,9 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 OPENAI = CONFIG["openai"]
 PERSONA = CONFIG["persona"]
 LISTENER = CONFIG["listener"]
+MEMORY = CONFIG.get("memory", {})
+MEMORY_MAX_ENTRIES = MEMORY.get("max_entries", 30)
+MEMORY_MAX_CHARS = MEMORY.get("max_chars", 3000)
 
 LETTER_STATUS_PENDING = 1
 LETTER_STATUS_AUDITING = 2
@@ -32,6 +36,12 @@ state = {
     "letters": {},
     "seq": 1000,
     "lock": threading.Lock(),
+}
+
+memory = {
+    "history": [],
+    "compressed": [],
+    "overflow": [],
 }
 
 
@@ -70,6 +80,96 @@ def save_data():
             json.dump(to_save, f, ensure_ascii=False, indent=2)
     except Exception as e:
         ctx.log.warn("save_data failed: %s" % e)
+
+
+def load_memory():
+    try:
+        with open(MEMORY_PATH, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        memory["history"] = loaded.get("history", [])
+        memory["compressed"] = loaded.get("compressed", [])
+        memory["overflow"] = loaded.get("overflow", [])
+    except Exception:
+        pass
+
+
+def save_memory():
+    try:
+        to_save = {
+            "history": memory["history"],
+            "compressed": memory["compressed"],
+            "overflow": memory["overflow"],
+        }
+        with open(MEMORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(to_save, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        ctx.log.warn("save_memory failed: %s" % e)
+
+
+def remember(role, content):
+    with state["lock"]:
+        memory["history"].append({
+            "role": role,
+            "content": content,
+            "ts": current_ts(),
+        })
+        while len(memory["history"]) > MEMORY_MAX_ENTRIES:
+            memory["overflow"].append(memory["history"].pop(0))
+        save_memory()
+
+
+def build_memory_messages():
+    msgs = []
+    for m in memory["compressed"]:
+        msgs.append({"role": "system", "content": "（记忆）%s" % m["content"]})
+    for m in memory["history"]:
+        msgs.append({"role": m["role"], "content": m["content"]})
+    return msgs
+
+
+def compress_memory():
+    with state["lock"]:
+        if not memory["overflow"]:
+            return
+        overflow = memory["overflow"]
+        prev_summaries = [m["content"] for m in memory["compressed"] if m["role"] == "assistant"]
+        memory["overflow"] = []
+        memory["compressed"] = []
+    try:
+        text = "\n".join("%s: %s" % (m["role"], m["content"]) for m in overflow)
+        if prev_summaries:
+            text = "此前摘要：\n" + "\n".join(prev_summaries) + "\n\n新对话：\n" + text
+        url = OPENAI["base_url"].rstrip("/") + "/chat/completions"
+        payload = {
+            "model": OPENAI["model"],
+            "temperature": 0.4,
+            "max_tokens": 800,
+            "messages": [
+                {"role": "system", "content": "你是记忆压缩器。把林离与玩家的书信往来内容压缩成简明要点摘要，保留双方说过的话和上下文。用中文，逐条列出。"},
+                {"role": "user", "content": "请压缩以下对话为摘要：\n\n" + text},
+            ],
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer %s" % OPENAI["api_key"],
+            },
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        summary = data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        ctx.log.warn("compress_memory failed: %s" % e)
+        with state["lock"]:
+            memory["overflow"] = overflow + memory["overflow"]
+            memory["compressed"] = [{"role": "assistant", "content": s, "ts": current_ts()} for s in prev_summaries]
+            save_memory()
+        return
+    with state["lock"]:
+        memory["compressed"].append({"role": "assistant", "content": "[历史摘要] " + summary, "ts": current_ts()})
+        save_memory()
 
 
 DISPATCH_HOSTS = ("dispatcher.olivia.miyoushe.com",)
@@ -142,14 +242,14 @@ def count_unread():
 
 def call_openai(user_text):
     url = OPENAI["base_url"].rstrip("/") + "/chat/completions"
+    messages = [{"role": "system", "content": PERSONA["system_prompt"]}]
+    messages += build_memory_messages()
+    messages.append({"role": "user", "content": user_text})
     payload = {
         "model": OPENAI["model"],
         "temperature": OPENAI.get("temperature", 0.9),
         "max_tokens": OPENAI.get("max_tokens", 500),
-        "messages": [
-            {"role": "system", "content": PERSONA["system_prompt"]},
-            {"role": "user", "content": user_text},
-        ],
+        "messages": messages,
     }
     req = urllib.request.Request(
         url,
@@ -177,6 +277,8 @@ def generate_reply(letter_id, content):
             letter["replied_at"] = current_ts()
             letter["reply_text"] = reply
             save_data()
+        remember("assistant", reply)
+        compress_memory()
         ctx.log.info("letter %s replied (len=%d)" % (letter_id, len(reply)))
     except Exception as e:
         with state["lock"]:
@@ -190,6 +292,7 @@ def generate_reply(letter_id, content):
 
 load_data()
 seed_data()
+load_memory()
 
 
 LOGIN_PATHS = ("/signIn", "/login", "/signout")
@@ -250,6 +353,7 @@ class OliviaLetterProxy:
                 }
                 save_data()
             threading.Thread(target=generate_reply, args=(letter_id, content), daemon=True).start()
+            remember("user", content)
             flow.response = json_response({"letterId": letter_id})
 
         elif method == "GET" and ep == "list":
@@ -309,6 +413,7 @@ class OliviaLetterProxy:
                 save_data()
                 content = letter["content"]
             threading.Thread(target=generate_reply, args=(letter_id, content), daemon=True).start()
+            remember("user", content)
             flow.response = json_response({"ok": True})
 
         else:

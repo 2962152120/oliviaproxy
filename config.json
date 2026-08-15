@@ -14,5 +14,9 @@
   "listener": {
     "host": "toy-cnbeta01.olivia.miyoushe.com",
     "path_prefix": "/toy/letter/"
+  },
+  "memory": {
+    "max_entries": 30,
+    "max_chars": 3000
   }
 }
