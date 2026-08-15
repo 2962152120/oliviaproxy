@@ -6,7 +6,7 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-15，版本 1.0.8）
+## 关键状态（截至 2026-08-15，版本 1.0.9）
 - **核心功能已全部打通并验证**：App 登录成功、进入主界面、写信/重发/每日上限均正常
 - 登录方案：`/signIn` 等接口在 addon 中 mock 返回 `{"code":0,"message":"","data":{}}`；mitmproxy 根证书需安装到系统（本机已装，用户级+机器级）
 - letter 拦截：addon 拦截 `/toy/letter/*`（list/detail/send/resend/unread_count/share），返回模拟数据，AI 回信走 `generate_reply` 后台线程
@@ -15,9 +15,10 @@
   - 每次回复成功后调 `compress_memory()`：把 overflow + 旧摘要用 AI 压缩成一条新摘要（进 `compressed`），失败则恢复 overflow 不丢记忆
   - 回信时 `build_memory_messages()` 把 compressed + history 注入 OpenAI messages（compressed 为 system 角色、history 保留原角色）
   - 配置在 config.json `memory.max_entries`(默认30) / `max_chars`(默认3000)
+- **dispatch enc_conf（1.0.9 修复）**：App 启动会请求 `dispatcher.olivia.miyoushe.com` 拉取配置，addon mock 返回的 `enc_conf` 需为真实值（App 解密用，空字符串会导致 App 弹 error "Failed to decrypt enc_conf"）。真实 enc_conf 存于 config.json `dispatch.enc_conf`（从 Olivia.log 的 "Dispatch response" 行提取）。若停服后 App 无法启动，更新该值为新的真实配置即可
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.0.8.exe`：安装包（Inno Setup）
+- `OliviaProxy-Setup-1.0.9.exe`：安装包（Inno Setup）
 - `便携版.zip` + `便携版\OliviaProxy\`：免安装版
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 
@@ -39,7 +40,7 @@
 - GUI exe：`D:\Program\python.exe -m PyInstaller --noconfirm --onefile --windowed --name OliviaGUI --icon "D:\OliviaProxy\build\icon.ico" "D:\OliviaProxy\gui\olivia_gui.py"`（输出在运行目录 dist/，复制到便携版和 release）
 - 便携版 zip：用 python zipfile 压缩便携版目录，排除 `debug.log letters.json proxy_backup.txt legal_agreed.txt __pycache__`
 - 安装包：`"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\Users\ASUS\Desktop\Oliviaproxy\源码\installer.iss"`
-- 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.0.8）
+- 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.0.9）
 
 ## Git（仓库在 D:\OliviaProxy，git 路径 `D:\Program Files\Git\cmd\git.exe`）
 - 跟踪源码 + 构建产物 + 日志；排除 `*.exe`、`letters.json`、`legal_agreed.txt`、`proxy_backup.txt`、`__pycache__`

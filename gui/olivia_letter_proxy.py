@@ -21,6 +21,7 @@ LISTENER = CONFIG["listener"]
 MEMORY = CONFIG.get("memory", {})
 MEMORY_MAX_ENTRIES = MEMORY.get("max_entries", 30)
 MEMORY_MAX_CHARS = MEMORY.get("max_chars", 3000)
+DISPATCH_ENC_CONF = CONFIG.get("dispatch", {}).get("enc_conf", "")
 
 LETTER_STATUS_PENDING = 1
 LETTER_STATUS_AUDITING = 2
@@ -303,15 +304,19 @@ class OliviaLetterProxy:
         host = flow.request.pretty_host
         path = flow.request.path or ""
         if host in DISPATCH_HOSTS:
-            resp = {
-                "code": 0,
-                "message": "",
-                "data": {
-                    "features": {},
-                    "config": {},
-                    "flags": {},
-                },
-            }
+            if DISPATCH_ENC_CONF:
+                data = {"enc_conf": DISPATCH_ENC_CONF}
+                resp = {"code": 0, "message": "ok", "data": data}
+            else:
+                resp = {
+                    "code": 0,
+                    "message": "",
+                    "data": {
+                        "features": {},
+                        "config": {},
+                        "flags": {},
+                    },
+                }
             flow.response = json_response(resp)
             print("DISPATCH HANDLED %s %s" % (flow.request.method, path), flush=True)
             return
