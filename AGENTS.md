@@ -1,4 +1,4 @@
-# Olivia 来信拦截助手 — 项目记忆
+﻿# Olivia 来信拦截助手 — 项目记忆
 
 ## 项目目标
 在 BSide Olivia（米哈游 林离 客户端）官方服务器下线（2026-08-27 停服）后，让"写信"功能继续可用：
@@ -6,18 +6,18 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-15，版本 1.0.7）
+## 关键状态（截至 2026-08-15，版本 1.0.8）
 - **核心功能已全部打通并验证**：App 登录成功、进入主界面、写信/重发/每日上限均正常
 - 登录方案：`/signIn` 等接口在 addon 中 mock 返回 `{"code":0,"message":"","data":{}}`；mitmproxy 根证书需安装到系统（本机已装，用户级+机器级）
 - letter 拦截：addon 拦截 `/toy/letter/*`（list/detail/send/resend/unread_count/share），返回模拟数据，AI 回信走 `generate_reply` 后台线程
-- **记忆系统（1.0.7 新增）**：AI 记住自己说过的话 + 用户说过的话，持久化到 `memory.json`
+- **记忆系统（1.0.8 新增）**：AI 记住自己说过的话 + 用户说过的话，持久化到 `memory.json`
   - `remember(role, content)`：写入历史，超 `max_entries` 后最老的进 `overflow`
   - 每次回复成功后调 `compress_memory()`：把 overflow + 旧摘要用 AI 压缩成一条新摘要（进 `compressed`），失败则恢复 overflow 不丢记忆
   - 回信时 `build_memory_messages()` 把 compressed + history 注入 OpenAI messages（compressed 为 system 角色、history 保留原角色）
   - 配置在 config.json `memory.max_entries`(默认30) / `max_chars`(默认3000)
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.0.7.exe`：安装包（Inno Setup）
+- `OliviaProxy-Setup-1.0.8.exe`：安装包（Inno Setup）
 - `便携版.zip` + `便携版\OliviaProxy\`：免安装版
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 
@@ -39,7 +39,7 @@
 - GUI exe：`D:\Program\python.exe -m PyInstaller --noconfirm --onefile --windowed --name OliviaGUI --icon "D:\OliviaProxy\build\icon.ico" "D:\OliviaProxy\gui\olivia_gui.py"`（输出在运行目录 dist/，复制到便携版和 release）
 - 便携版 zip：用 python zipfile 压缩便携版目录，排除 `debug.log letters.json proxy_backup.txt legal_agreed.txt __pycache__`
 - 安装包：`"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\Users\ASUS\Desktop\Oliviaproxy\源码\installer.iss"`
-- 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.0.7）
+- 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.0.8）
 
 ## Git（仓库在 D:\OliviaProxy，git 路径 `D:\Program Files\Git\cmd\git.exe`）
 - 跟踪源码 + 构建产物 + 日志；排除 `*.exe`、`letters.json`、`legal_agreed.txt`、`proxy_backup.txt`、`__pycache__`
