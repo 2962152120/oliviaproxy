@@ -16,6 +16,7 @@
   - 回信时 `build_memory_messages()` 把 compressed + history 注入 OpenAI messages（compressed 为 system 角色、history 保留原角色）
   - 配置在 config.json `memory.max_entries`(默认30) / `max_chars`(默认3000)
 - **dispatch enc_conf（1.0.9 修复）**：App 启动会请求 `dispatcher.olivia.miyoushe.com` 拉取配置，addon mock 返回的 `enc_conf` 需为真实值（App 解密用，空字符串会导致 App 弹 error "Failed to decrypt enc_conf"）。真实 enc_conf 存于 config.json `dispatch.enc_conf`（从 Olivia.log 的 "Dispatch response" 行提取）。若停服后 App 无法启动，更新该值为新的真实配置即可
+- **删除 CA 证书按钮（GUI 新增）**：GUI 证书管理区新增"删除 CA 证书"按钮（`do_uninstall_cert` → `uninstall_cert`），用 `certutil -user -delstore Root mitmproxy` 从用户信任存储删除，无需管理员
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
 - `OliviaProxy-Setup-1.0.9.exe`：安装包（Inno Setup）

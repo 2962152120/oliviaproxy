@@ -254,6 +254,23 @@ def install_cert():
         return False, "证书安装异常: %s" % e
 
 
+def uninstall_cert():
+    """从 CurrentUser Root 存储删除 mitmproxy 证书，返回 (ok, msg)."""
+    try:
+        import subprocess
+        r = subprocess.run(
+            ["certutil", "-user", "-delstore", "Root", "mitmproxy"],
+            capture_output=True, text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if r.returncode == 0:
+            return True, "证书已从系统信任存储删除"
+        if "没有" in (r.stderr or r.stdout) or "could not be found" in (r.stderr or r.stdout):
+            return True, "系统信任存储中没有该证书"
+        return False, "证书删除失败: %s" % (r.stderr or r.stdout)
+    except Exception as e:
+        return False, "证书删除异常: %s" % e
+
+
 def renew_cert():
     """删除旧证书并用运行时重新生成，返回 (ok, msg)."""
     try:
@@ -361,6 +378,7 @@ class OliviaGUI:
         btn_row.pack(fill="x", pady=(4, 0))
         ttk.Button(btn_row, text="安装 CA 证书", command=self.do_install_cert).pack(side="left", padx=(0, 6))
         ttk.Button(btn_row, text="重新生成 CA 证书", command=self.do_renew_cert).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_row, text="删除 CA 证书", command=self.do_uninstall_cert).pack(side="left", padx=(0, 6))
         ttk.Button(btn_row, text="查看声明", command=self.show_legal).pack(side="left")
 
     def _show_legal_notice(self):
@@ -425,6 +443,21 @@ class OliviaGUI:
         ok, msg = renew_cert()
         self._log(msg)
         messagebox.showinfo("重新生成证书", msg)
+        self.refresh_cert_status()
+
+    def do_uninstall_cert(self):
+        if not messagebox.askyesno(
+            "删除 CA 证书",
+            "将从系统“受信任的根证书颁发机构”存储中删除本工具的 mitmproxy 根证书。\n\n"
+            "删除后，本工具经代理转发的 HTTPS 连接将不再被系统信任，"
+            "如需恢复请点击“安装 CA 证书”。\n\n确定删除吗？",
+            icon="warning"):
+            self._log("用户取消删除证书")
+            return
+        self._log("正在删除 CA 证书...")
+        ok, msg = uninstall_cert()
+        self._log(msg)
+        messagebox.showinfo("删除证书", msg)
         self.refresh_cert_status()
 
     def _build_api_frame(self):
