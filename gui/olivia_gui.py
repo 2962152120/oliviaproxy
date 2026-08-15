@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
+APP_VERSION = "1.0.7"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
@@ -299,7 +300,7 @@ def mark_legal_agreed():
 class OliviaGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title(APP_NAME)
+        self.root.title("%s v%s" % (APP_NAME, APP_VERSION))
         self.root.geometry("580x720")
         self.root.resizable(False, False)
 
