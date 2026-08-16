@@ -17,23 +17,58 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 DATA_PATH = os.path.join(BASE_DIR, "letters.json")
 MEMORY_PATH = os.path.join(BASE_DIR, "memory.json")
 
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    CONFIG = json.load(f)
+CONFIG = {}
+OPENAI = {}
+PERSONA = {}
+LISTENER = {}
+MEMORY = {}
+MEMORY_MAX_ENTRIES = 30
+MEMORY_MAX_CHARS = 3000
+DISPATCH_ENC_CONF = ""
+REPLY_CFG = {}
+VIDEO_CFG = {}
+TTS_CFG = {}
 
-OPENAI = CONFIG["openai"]
-PERSONA = CONFIG["persona"]
-LISTENER = CONFIG["listener"]
-MEMORY = CONFIG.get("memory", {})
-MEMORY_MAX_ENTRIES = MEMORY.get("max_entries", 30)
-MEMORY_MAX_CHARS = MEMORY.get("max_chars", 3000)
-DISPATCH_ENC_CONF = CONFIG.get("dispatch", {}).get("enc_conf", "")
-REPLY_CFG = CONFIG.get("reply", {})
-VIDEO_CFG = CONFIG.get("video", {})
-TTS_CFG = CONFIG.get("tts", {})
+VIDEO_ENABLED = True
+TTS_ENABLED = True
+VIDEO_PROBABILITY = 0.3
 
-VIDEO_ENABLED = REPLY_CFG.get("video_enabled", True)
-TTS_ENABLED = REPLY_CFG.get("tts_enabled", True)
-VIDEO_PROBABILITY = REPLY_CFG.get("video_probability", 0.3)
+_config_mtime = 0.0
+
+
+def reload_config(force=False):
+    global CONFIG, OPENAI, PERSONA, LISTENER, MEMORY, MEMORY_MAX_ENTRIES, MEMORY_MAX_CHARS
+    global DISPATCH_ENC_CONF, REPLY_CFG, VIDEO_CFG, TTS_CFG
+    global VIDEO_ENABLED, TTS_ENABLED, VIDEO_PROBABILITY, _config_mtime
+    if not force:
+        try:
+            mtime = os.path.getmtime(CONFIG_PATH)
+        except Exception:
+            mtime = _config_mtime
+        if mtime == _config_mtime:
+            return
+        _config_mtime = mtime
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            CONFIG = json.load(f)
+    except Exception:
+        return
+    OPENAI = CONFIG.get("openai", {})
+    PERSONA = CONFIG.get("persona", {})
+    LISTENER = CONFIG.get("listener", {})
+    MEMORY = CONFIG.get("memory", {})
+    MEMORY_MAX_ENTRIES = MEMORY.get("max_entries", 30)
+    MEMORY_MAX_CHARS = MEMORY.get("max_chars", 3000)
+    DISPATCH_ENC_CONF = CONFIG.get("dispatch", {}).get("enc_conf", "")
+    REPLY_CFG = CONFIG.get("reply", {})
+    VIDEO_CFG = CONFIG.get("video", {})
+    TTS_CFG = CONFIG.get("tts", {})
+    VIDEO_ENABLED = REPLY_CFG.get("video_enabled", True)
+    TTS_ENABLED = REPLY_CFG.get("tts_enabled", True)
+    VIDEO_PROBABILITY = REPLY_CFG.get("video_probability", 0.3)
+
+
+reload_config()
 VIDEO_DIR = os.path.join(BASE_DIR, "videos")
 VIDEO_PORT = 8765
 VIDEO_HOST = "127.0.0.1"
@@ -147,6 +182,7 @@ def build_memory_messages():
 
 
 def compress_memory():
+    reload_config()
     with state["lock"]:
         if not memory["overflow"]:
             return
@@ -195,6 +231,7 @@ DISPATCH_HOSTS = ("dispatcher.olivia.miyoushe.com",)
 
 
 def is_letter_flow(flow) -> bool:
+    reload_config()
     path = flow.request.path or ""
     if flow.request.pretty_host in DISPATCH_HOSTS:
         return True
@@ -324,6 +361,7 @@ def gen_video_volc(prompt):
 
 
 def gen_video(prompt):
+    reload_config()
     provider = VIDEO_CFG.get("provider", "minimax").lower()
     if provider == "openai":
         return gen_video_openai(prompt)
@@ -395,6 +433,7 @@ def tts_volc(text):
 
 
 def tts_synthesize(text):
+    reload_config()
     provider = TTS_CFG.get("provider", "minimax").lower()
     if provider == "openai":
         return tts_openai(text)
@@ -544,6 +583,7 @@ def count_unread():
 
 
 def call_openai(user_text):
+    reload_config()
     url = OPENAI["base_url"].rstrip("/") + "/chat/completions"
     messages = [{"role": "system", "content": PERSONA["system_prompt"]}]
     messages += build_memory_messages()
@@ -568,6 +608,7 @@ def call_openai(user_text):
 
 
 def generate_reply(letter_id, content):
+    reload_config()
     delay = PERSONA.get("reply_delay_seconds", 20)
     time.sleep(delay)
     try:

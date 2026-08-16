@@ -6,7 +6,8 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-16，版本 1.2.0）
+## 关键状态（截至 2026-08-16，版本 1.2.1）
+- **配置热加载（1.2.1 修复）**：addon 原来只在模块加载时读一次 config.json，GUI 保存后运行中的拦截进程不生效（"视频/TTS 没保存"）。现改为 `reload_config()` 基于 **config.json 的 mtime 变化**才重读（幂等、零开销），并在 `call_openai`/`generate_reply`/`gen_video`/`tts_synthesize`/`compress_memory`/`is_letter_flow` 入口调用——GUI 保存后**无需重启拦截**即生效
 - **视频/语音回信（1.2.0 新增）**：写信后按 `reply.video_probability`（默认 0.3）概率触发视频回信
   - App 原生支持：`replyType` 枚举 `NONE=0/TEXT=1/SPEECH=2/MIX_PLAY=3/MIX_SVS=4`，非 TEXT 时前端渲染 `<video>`（`src=replyVideoUrl`，16:9），视频**单独交付**。本项目用 **MIX_PLAY=3**（视频+语音）
   - addon 流程：文本回复保存后，`if VIDEO_ENABLED and random.random() < VIDEO_PROBABILITY` 启动后台线程 → `gen_video()`（视频生成）→ `tts_synthesize()`（语音合成）→ `merge_audio_into_video()`（ffmpeg 混流）→ 存 `videos/<letter_id>.mp4` → letter 设 `reply_type=3` + `reply_video_url`；失败记 `video_fail`
@@ -29,7 +30,7 @@
 - **删除 CA 证书按钮（GUI 新增）**：GUI 证书管理区新增"删除 CA 证书"按钮（`do_uninstall_cert` → `uninstall_cert`），用 `certutil -user -delstore Root mitmproxy` 从用户信任存储删除，无需管理员
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.2.0.exe`：安装包（Inno Setup）
+- `OliviaProxy-Setup-1.2.1.exe`：安装包（Inno Setup）
 - `便携版.zip` + `便携版\OliviaProxy\`：免安装版
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 
