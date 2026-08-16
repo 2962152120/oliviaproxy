@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
@@ -386,7 +386,10 @@ class OliviaGUI:
     def _build_header(self):
         hdr = ttk.Frame(self.root, padding=(12, 10))
         hdr.pack(fill="x")
-        tk.Label(hdr, text=APP_NAME, font=("Microsoft YaHei UI", 15, "bold")).pack(anchor="w")
+        row = ttk.Frame(hdr)
+        row.pack(fill="x")
+        tk.Label(row, text=APP_NAME, font=("Microsoft YaHei UI", 15, "bold")).pack(side="left")
+        ttk.Button(row, text="保存全部配置", command=self.save_all_config).pack(side="right")
         tk.Label(hdr, text="拦截 Olivia 来信接口，用第三方 OpenAI 兼容 API 生成回信",
                  fg="#888").pack(anchor="w")
 
@@ -737,34 +740,56 @@ class OliviaGUI:
         self._log("配置已保存")
         messagebox.showinfo("保存", "配置已保存")
 
-    def save_video_config(self):
-        merged = dict(self.cfg.data)
+    def _collect_video(self):
         try:
             prob = float(self.video_prob.get() or 0.3)
             prob = max(0.0, min(1.0, prob))
         except ValueError:
             prob = 0.3
-        merged["reply"] = {
-            "video_enabled": bool(self.video_enabled.get()),
-            "tts_enabled": bool(self.tts_enabled.get()),
-            "video_probability": prob,
+        return {
+            "reply": {
+                "video_enabled": bool(self.video_enabled.get()),
+                "tts_enabled": bool(self.tts_enabled.get()),
+                "video_probability": prob,
+            },
+            "video": {
+                "provider": self.video_provider.get() or "minimax",
+                "api_key": self.video_key.get().strip(),
+                "base_url": self.video_base.get().strip(),
+                "model": self.video_model.get().strip(),
+                "timeout": self.cfg.data.get("video", {}).get("timeout", 600),
+            },
+            "tts": {
+                "provider": self.tts_provider.get() or "minimax",
+                "api_key": self.tts_key.get().strip(),
+                "base_url": self.tts_base.get().strip(),
+                "model": self.tts_model.get().strip(),
+                "voice": self.tts_voice.get().strip(),
+                "app_id": self.tts_app_id.get().strip(),
+                "access_token": self.tts_access.get().strip(),
+            },
         }
-        merged["video"] = {
-            "provider": self.video_provider.get() or "minimax",
-            "api_key": self.video_key.get().strip(),
-            "base_url": self.video_base.get().strip(),
-            "model": self.video_model.get().strip(),
-            "timeout": self.cfg.data.get("video", {}).get("timeout", 600),
-        }
-        merged["tts"] = {
-            "provider": self.tts_provider.get() or "minimax",
-            "api_key": self.tts_key.get().strip(),
-            "base_url": self.tts_base.get().strip(),
-            "model": self.tts_model.get().strip(),
-            "voice": self.tts_voice.get().strip(),
-            "app_id": self.tts_app_id.get().strip(),
-            "access_token": self.tts_access.get().strip(),
-        }
+
+    def save_all_config(self):
+        merged = dict(self.cfg.data)
+        d = self._collect_api()
+        v = self._collect_video()
+        merged["openai"] = d["openai"]
+        merged["persona"] = d["persona"]
+        merged["reply"] = v["reply"]
+        merged["video"] = v["video"]
+        merged["tts"] = v["tts"]
+        self.cfg.data = merged
+        self.cfg.save()
+        self._log("全部配置已保存")
+        messagebox.showinfo("保存", "全部配置已保存（OpenAI / 人设 / 视频 / 语音）")
+
+    def save_video_config(self):
+        merged = dict(self.cfg.data)
+        v = self._collect_video()
+        merged["reply"] = v["reply"]
+        merged["video"] = v["video"]
+        merged["tts"] = v["tts"]
         self.cfg.data = merged
         self.cfg.save()
         self._log("视频/语音配置已保存")

@@ -1,6 +1,6 @@
 ﻿; Olivia 来信拦截助手 - Inno Setup 安装脚本
 #define MyAppName "Olivia 来信拦截助手"
-#define MyAppVersion "1.2.1"
+#define MyAppVersion "1.2.2"
 #define MyAppPublisher "OliviaProxy"
 #define MyAppExeName "OliviaGUI.exe"
 #define SrcDir "D:\OliviaProxy\release\OliviaProxy"
@@ -14,7 +14,7 @@ DefaultDirName={autopf}\OliviaProxy
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=D:\OliviaProxy\release
-OutputBaseFilename=OliviaProxy-Setup-1.2.1
+OutputBaseFilename=OliviaProxy-Setup-1.2.2
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -55,3 +55,4 @@ Filename: "{app}\uninstall.bat"; Flags: runhidden waituntilterminated
 Type: filesandordirs; Name: "{app}\letters.json"
 Type: filesandordirs; Name: "{app}\debug.log"
 Type: filesandordirs; Name: "{app}\proxy_backup.txt"
+
