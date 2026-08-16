@@ -6,7 +6,14 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-16，版本 1.2.2）
+## 关键状态（截至 2026-08-17，版本 1.2.3）
+- **MiniMax 视频 V2 接口修复（1.2.3 修复）**：MiniMax 已把视频模型升级为 **MiniMax-H3**，新接口走 V2（`POST /v2/video_generation` 异步创建 → `GET /v2/query/video_generation/{task_id}` 轮询，成功返回 `task.content.url` 直下，无需鉴权）。旧 V1 接口（`/v1/video_generation` + `/v1/files/retrieve`）已废弃会 404
+  - addon `gen_video_minimax` 现自动路由：model 含 `minimax-h` 前缀或 `MiniMax-Hailuo-03` → V2；否则 V1 fallback
+  - **V2 轮询必须用 GET**（POST 会 404），新增 `http_json_get()`；轮询间隔 10s（文档推荐）；下载 `content.url` 不带 Authorization
+  - config.json `video` 段新增 `resolution`(默认768P)/`duration`(默认5)/`ratio`(默认16:9)；默认 model 改为 `MiniMax-H3`
+  - GUI `MODEL_HINTS` 与默认 model 已同步（MiniMax-H3 / V2 接口）
+- **MiniMax TTS 请求体按官方文档修正（1.2.3）**：改为 `voice_setting:{voice_id,speed,vol,pitch}` + `audio_setting:{sample_rate,bitrate,format,channel}` 结构（旧顶层 `voice_id` 参数可能被废弃）；响应兼容 `data.audio`（hex/base64 自动识别）与 `data.audio_file`；默认 model 改为 `speech-2.8-hd`
+- **config.json UTF-8 BOM 兼容（1.2.3 修复）**：addon 与 GUI 读取 config.json 改用 `utf-8-sig`（兼容带 BOM 文件，避免 json 解析失败导致配置全空、接口报 401/404）
 - **保存全部配置按钮（1.2.2 新增）**：GUI 顶部新增"保存全部配置"按钮（`save_all_config`），一键保存 openai/persona/reply/video/tts 全部字段；重构出 `_collect_video()` 供 `save_all_config` 与 `save_video_config` 复用
 - **配置热加载（1.2.1 修复）**：addon 原来只在模块加载时读一次 config.json，GUI 保存后运行中的拦截进程不生效（"视频/TTS 没保存"）。现改为 `reload_config()` 基于 **config.json 的 mtime 变化**才重读（幂等、零开销），并在 `call_openai`/`generate_reply`/`gen_video`/`tts_synthesize`/`compress_memory`/`is_letter_flow` 入口调用——GUI 保存后**无需重启拦截**即生效
 - **视频/语音回信（1.2.0 新增）**：写信后按 `reply.video_probability`（默认 0.3）概率触发视频回信
@@ -31,7 +38,7 @@
 - **删除 CA 证书按钮（GUI 新增）**：GUI 证书管理区新增"删除 CA 证书"按钮（`do_uninstall_cert` → `uninstall_cert`），用 `certutil -user -delstore Root mitmproxy` 从用户信任存储删除，无需管理员
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.2.2.exe`：安装包（Inno Setup）
+- `OliviaProxy-Setup-1.2.3.exe`：安装包（Inno Setup）
 - `便携版.zip` + `便携版\OliviaProxy\`：免安装版
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 

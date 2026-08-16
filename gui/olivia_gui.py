@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
@@ -81,7 +81,7 @@ class Config:
 
     def load(self):
         try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
                 return json.load(f)
         except Exception:
             return {}
@@ -317,7 +317,7 @@ def mark_legal_agreed():
 MODEL_HINTS = (
     "支持模型参考:\n"
     "· 视频 OpenAI: sora-2 / sora-2-pro (2026-09-24 后停服)\n"
-    "· 视频 MiniMax: MiniMax-Hailuo-2.3 / T2V-01-Director / T2V-01\n"
+    "· 视频 MiniMax: MiniMax-H3 (V2 接口 /v2/video_generation)\n"
     "· 视频 火山引擎: doubao-seedance-1-5-pro-251215 等 Seedance 系列\n"
     "· 语音 OpenAI: gpt-4o-mini-tts / tts-1 / tts-1-hd (音色 coral/alloy/nova 等)\n"
     "· 语音 MiniMax: speech-2.8-hd / speech-2.6-hd / speech-02-hd 等\n"
@@ -331,7 +331,7 @@ VIDEO_DEFAULT_BASE = {
     "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
 }
 VIDEO_DEFAULT_MODEL = {
-    "minimax": "MiniMax-Hailuo-2.3",
+    "minimax": "MiniMax-H3",
     "openai": "sora-2",
     "volcengine": "doubao-seedance-1-5-pro-251215",
 }
@@ -342,7 +342,7 @@ TTS_DEFAULT_BASE = {
     "volcengine": "https://openspeech.bytedance.com/api/v1/tts",
 }
 TTS_DEFAULT_MODEL = {
-    "minimax": "speech-2.6-hd",
+    "minimax": "speech-2.8-hd",
     "openai": "gpt-4o-mini-tts",
     "volcengine": "seed-tts-2.0",
 }

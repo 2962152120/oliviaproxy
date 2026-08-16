@@ -1,4 +1,4 @@
-﻿{
+{
   "openai": {
     "base_url": "https://api.deepseek.com/v1",
     "api_key": "sk-xxxx-your-key-here",
@@ -24,18 +24,22 @@
     "provider": "minimax",
     "api_key": "",
     "base_url": "https://api.minimaxi.com/v1",
-    "model": "MiniMax-Hailuo-2.3",
-    "timeout": 600
+    "model": "MiniMax-H3",
+    "timeout": 600,
+    "resolution": "768P",
+    "duration": 5,
+    "ratio": "16:9"
   },
   "tts": {
     "provider": "minimax",
     "api_key": "",
     "base_url": "https://api.minimaxi.com/v1",
-    "model": "speech-2.6-hd",
+    "model": "speech-2.8-hd",
     "voice": "female-tianmei",
     "app_id": "",
     "access_token": ""
-  },  "memory": {
+  },
+  "memory": {
     "max_entries": 30,
     "max_chars": 3000
   },

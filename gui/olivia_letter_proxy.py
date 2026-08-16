@@ -49,7 +49,7 @@ def reload_config(force=False):
             return
         _config_mtime = mtime
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
             CONFIG = json.load(f)
     except Exception:
         return
@@ -273,6 +273,15 @@ def http_json_request(url, payload, api_key, timeout=180, extra_headers=None):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def http_json_get(url, api_key=None, timeout=180):
+    headers = {}
+    if api_key:
+        headers["Authorization"] = "Bearer %s" % api_key
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 def http_download(url, api_key=None, timeout=300):
     headers = {}
     if api_key:
@@ -309,10 +318,43 @@ def gen_video_minimax(prompt):
     cfg = VIDEO_CFG
     base = cfg.get("base_url", "https://api.minimaxi.com/v1").rstrip("/")
     key = cfg.get("api_key", "")
-    model = cfg.get("model", "MiniMax-Hailuo-2.3")
+    model = cfg.get("model", "MiniMax-H3")
     timeout = cfg.get("timeout", 600)
+    resolution = cfg.get("resolution", "768P")
+    duration = int(cfg.get("duration", 5))
+    ratio = cfg.get("ratio", "16:9")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    # V2 接口（MiniMax-H3 等新模型）
+    if model.lower().startswith("minimax-h") or model.lower() in ("minimax-hailuo-03",):
+        body = {
+            "model": model,
+            "content": [{"type": "text", "text": prompt}],
+            "resolution": resolution,
+            "duration": duration,
+            "ratio": ratio,
+        }
+        data = http_json_request(base + "/v2/video_generation", body, key, timeout=60)
+        task_id = data.get("task_id") or data.get("data", {}).get("task_id")
+        if not task_id:
+            raise RuntimeError("minimax v2 video create: no task_id in %r" % (data,))
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(10)
+            data = http_json_get(base + "/v2/query/video_generation/" + task_id, key, timeout=60)
+            task = data.get("task", data)
+            status = str(task.get("status", "")).lower()
+            if status == "succeeded":
+                url = (task.get("content") or {}).get("url")
+                if not url:
+                    raise RuntimeError("minimax v2 video succeeded but no url: %r" % (task,))
+                return http_download(url, None, timeout=300)
+            if status in ("failed", "cancelled", "canceled"):
+                raise RuntimeError("minimax v2 video failed: %r" % (task,))
+        raise RuntimeError("minimax v2 video timeout")
+    # 旧 V1 接口（Hailuo 2.x / 02 等历史模型）
     body = {"model": model, "prompt": prompt}
-    data = http_json_request(base + "/video_generation", body, key, timeout=60)
+    data = http_json_request(base + "/v1/video_generation", body, key, timeout=60)
     task_id = data.get("task_id") or data.get("data", {}).get("task_id")
     if not task_id:
         raise RuntimeError("minimax video create: no task_id in %r" % (data,))
@@ -320,7 +362,7 @@ def gen_video_minimax(prompt):
     file_id = None
     while time.time() < deadline:
         time.sleep(15)
-        data = http_json_request(base + "/query/video_generation?task_id=" + task_id, {}, key, timeout=60)
+        data = http_json_request(base + "/v1/query/video_generation?task_id=" + task_id, {}, key, timeout=60)
         inner = data.get("data", data)
         status = str(inner.get("status", "")).lower()
         file_id = inner.get("file_id") or inner.get("fileId")
@@ -330,7 +372,7 @@ def gen_video_minimax(prompt):
             raise RuntimeError("minimax video failed: %r" % (data,))
     if not file_id:
         raise RuntimeError("minimax video: no file_id after polling")
-    return http_download(base + "/files/retrieve?file_id=" + file_id, key, timeout=300)
+    return http_download(base + "/v1/files/retrieve?file_id=" + file_id, key, timeout=300)
 
 
 def gen_video_volc(prompt):
@@ -392,18 +434,35 @@ def tts_minimax(text):
     body = {
         "model": model,
         "text": text,
-        "voice_id": voice,
-        "audio_sample_rate": 32000,
-        "bitrate": 128000,
-        "format": "mp3",
+        "stream": False,
+        "voice_setting": {
+            "voice_id": voice,
+            "speed": 1,
+            "vol": 1,
+            "pitch": 0,
+        },
+        "audio_setting": {
+            "sample_rate": 32000,
+            "bitrate": 128000,
+            "format": "mp3",
+            "channel": 1,
+        },
+        "output_format": "hex",
     }
     data = http_json_request(base + "/t2a_v2", body, key, timeout=180)
-    audio = data.get("audio_file") or data.get("data", {}).get("audio_file") or data.get("audio")
+    audio = (data.get("data") or {}).get("audio") or data.get("audio_file") or data.get("data", {}).get("audio_file")
     if not audio:
         raise RuntimeError("minimax tts: no audio in %r" % (data,))
-    if isinstance(audio, str):
-        return base64.b64decode(audio)
-    return audio
+    if not isinstance(audio, str):
+        return audio
+    audio = audio.strip()
+    # 兼容 hex 与 base64 两种编码（音频数据不会是纯 ASCII 可读文本）
+    try:
+        if len(audio) % 2 == 0 and all(c in "0123456789abcdefABCDEF" for c in audio):
+            return bytes.fromhex(audio)
+    except Exception:
+        pass
+    return base64.b64decode(audio)
 
 
 def tts_volc(text):
