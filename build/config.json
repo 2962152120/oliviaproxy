@@ -1,4 +1,4 @@
-{
+﻿{
   "openai": {
     "base_url": "https://api.deepseek.com/v1",
     "api_key": "sk-xxxx-your-key-here",
@@ -15,7 +15,27 @@
     "host": "toy-cnbeta01.olivia.miyoushe.com",
     "path_prefix": "/toy/letter/"
   },
-  "memory": {
+  "reply": {
+    "video_probability": 0.3,
+    "video_enabled": true,
+    "tts_enabled": true
+  },
+  "video": {
+    "provider": "minimax",
+    "api_key": "",
+    "base_url": "https://api.minimaxi.com/v1",
+    "model": "MiniMax-Hailuo-2.3",
+    "timeout": 600
+  },
+  "tts": {
+    "provider": "minimax",
+    "api_key": "",
+    "base_url": "https://api.minimaxi.com/v1",
+    "model": "speech-2.6-hd",
+    "voice": "female-tianmei",
+    "app_id": "",
+    "access_token": ""
+  },  "memory": {
     "max_entries": 30,
     "max_chars": 3000
   },

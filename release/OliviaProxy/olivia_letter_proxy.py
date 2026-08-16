@@ -1,5 +1,10 @@
+import base64
+import http.server as _http_server
 import json
 import os
+import random
+import socketserver as _socketserver
+import subprocess
 import threading
 import time
 import urllib.request
@@ -22,6 +27,16 @@ MEMORY = CONFIG.get("memory", {})
 MEMORY_MAX_ENTRIES = MEMORY.get("max_entries", 30)
 MEMORY_MAX_CHARS = MEMORY.get("max_chars", 3000)
 DISPATCH_ENC_CONF = CONFIG.get("dispatch", {}).get("enc_conf", "")
+REPLY_CFG = CONFIG.get("reply", {})
+VIDEO_CFG = CONFIG.get("video", {})
+TTS_CFG = CONFIG.get("tts", {})
+
+VIDEO_ENABLED = REPLY_CFG.get("video_enabled", True)
+TTS_ENABLED = REPLY_CFG.get("tts_enabled", True)
+VIDEO_PROBABILITY = REPLY_CFG.get("video_probability", 0.3)
+VIDEO_DIR = os.path.join(BASE_DIR, "videos")
+VIDEO_PORT = 8765
+VIDEO_HOST = "127.0.0.1"
 
 LETTER_STATUS_PENDING = 1
 LETTER_STATUS_AUDITING = 2
@@ -32,6 +47,9 @@ LETTER_STATUS_FAILED = 5
 AUDIT_PASSED = 2
 REPLY_TYPE_NONE = 0
 REPLY_TYPE_TEXT = 1
+REPLY_TYPE_SPEECH = 2
+REPLY_TYPE_MIX_PLAY = 3
+REPLY_TYPE_MIX_SVS = 4
 
 state = {
     "letters": {},
@@ -202,8 +220,287 @@ def current_ts():
     return int(time.time())
 
 
+def http_json_request(url, payload, api_key, timeout=180, extra_headers=None):
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer %s" % api_key,
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def http_download(url, api_key=None, timeout=300):
+    headers = {}
+    if api_key:
+        headers["Authorization"] = "Bearer %s" % api_key
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def gen_video_openai(prompt):
+    cfg = VIDEO_CFG
+    base = cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
+    key = cfg.get("api_key", "")
+    model = cfg.get("model", "sora-2")
+    timeout = cfg.get("timeout", 600)
+    body = {"model": model, "prompt": prompt}
+    data = http_json_request(base + "/videos", body, key, timeout=60)
+    video_id = data.get("id") or data.get("data", {}).get("id")
+    if not video_id:
+        raise RuntimeError("openai video create: no id in %r" % (data,))
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(15)
+        data = http_json_request(base + "/videos/" + video_id, {}, key, timeout=60)
+        status = data.get("status")
+        if status == "completed":
+            return http_download(base + "/videos/" + video_id + "/content", key, timeout=300)
+        if status == "failed":
+            raise RuntimeError("openai video failed: %r" % (data,))
+    raise RuntimeError("openai video timeout")
+
+
+def gen_video_minimax(prompt):
+    cfg = VIDEO_CFG
+    base = cfg.get("base_url", "https://api.minimaxi.com/v1").rstrip("/")
+    key = cfg.get("api_key", "")
+    model = cfg.get("model", "MiniMax-Hailuo-2.3")
+    timeout = cfg.get("timeout", 600)
+    body = {"model": model, "prompt": prompt}
+    data = http_json_request(base + "/video_generation", body, key, timeout=60)
+    task_id = data.get("task_id") or data.get("data", {}).get("task_id")
+    if not task_id:
+        raise RuntimeError("minimax video create: no task_id in %r" % (data,))
+    deadline = time.time() + timeout
+    file_id = None
+    while time.time() < deadline:
+        time.sleep(15)
+        data = http_json_request(base + "/query/video_generation?task_id=" + task_id, {}, key, timeout=60)
+        inner = data.get("data", data)
+        status = str(inner.get("status", "")).lower()
+        file_id = inner.get("file_id") or inner.get("fileId")
+        if status in ("success", "succeeded", "complete", "completed"):
+            break
+        if status in ("failed", "error"):
+            raise RuntimeError("minimax video failed: %r" % (data,))
+    if not file_id:
+        raise RuntimeError("minimax video: no file_id after polling")
+    return http_download(base + "/files/retrieve?file_id=" + file_id, key, timeout=300)
+
+
+def gen_video_volc(prompt):
+    cfg = VIDEO_CFG
+    base = cfg.get("base_url", "https://ark.cn-beijing.volces.com/api/v3").rstrip("/")
+    key = cfg.get("api_key", "")
+    model = cfg.get("model", "doubao-seedance-1-5-pro-251215")
+    timeout = cfg.get("timeout", 600)
+    body = {"model": model, "content": [{"type": "text", "text": prompt}]}
+    data = http_json_request(base + "/contents/generations/tasks", body, key, timeout=60)
+    task_id = data.get("id") or data.get("data", {}).get("id")
+    if not task_id:
+        raise RuntimeError("volc video create: no id in %r" % (data,))
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(15)
+        data = http_json_request(base + "/contents/generations/tasks/" + task_id, {}, key, timeout=60)
+        status = str(data.get("status", "")).lower()
+        if status == "succeeded":
+            content = data.get("content", {})
+            video_url = content.get("video_url") if isinstance(content, dict) else None
+            if not video_url:
+                raise RuntimeError("volc video succeeded but no video_url: %r" % (data,))
+            return http_download(video_url, key, timeout=300)
+        if status in ("failed", "canceled", "cancelled"):
+            raise RuntimeError("volc video failed: %r" % (data,))
+    raise RuntimeError("volc video timeout")
+
+
+def gen_video(prompt):
+    provider = VIDEO_CFG.get("provider", "minimax").lower()
+    if provider == "openai":
+        return gen_video_openai(prompt)
+    if provider == "volcengine" or provider == "volc":
+        return gen_video_volc(prompt)
+    return gen_video_minimax(prompt)
+
+
+def tts_openai(text):
+    cfg = TTS_CFG
+    base = cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
+    key = cfg.get("api_key", "")
+    model = cfg.get("model", "gpt-4o-mini-tts")
+    voice = cfg.get("voice", "coral")
+    body = {"model": model, "input": text, "voice": voice}
+    headers = {"Content-Type": "application/json", "Authorization": "Bearer %s" % key}
+    req = urllib.request.Request(base + "/audio/speech", data=json.dumps(body).encode("utf-8"), headers=headers)
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        return resp.read()
+
+
+def tts_minimax(text):
+    cfg = TTS_CFG
+    base = cfg.get("base_url", "https://api.minimaxi.com/v1").rstrip("/")
+    key = cfg.get("api_key", "")
+    model = cfg.get("model", "speech-2.6-hd")
+    voice = cfg.get("voice", "female-tianmei")
+    body = {
+        "model": model,
+        "text": text,
+        "voice_id": voice,
+        "audio_sample_rate": 32000,
+        "bitrate": 128000,
+        "format": "mp3",
+    }
+    data = http_json_request(base + "/t2a_v2", body, key, timeout=180)
+    audio = data.get("audio_file") or data.get("data", {}).get("audio_file") or data.get("audio")
+    if not audio:
+        raise RuntimeError("minimax tts: no audio in %r" % (data,))
+    if isinstance(audio, str):
+        return base64.b64decode(audio)
+    return audio
+
+
+def tts_volc(text):
+    cfg = TTS_CFG
+    app_id = cfg.get("app_id", "")
+    token = cfg.get("access_token", "")
+    model = cfg.get("model", "seed-tts-2.0")
+    voice = cfg.get("voice", "zh_female_vv_uranus_bigtts")
+    reqid = uuid.uuid4().hex
+    payload = {
+        "app": {"appid": app_id, "token": token, "cluster": "volcano_tts"},
+        "user": {"uid": "olivia_letter"},
+        "audio": {"voice_type": voice, "encoding": "mp3", "speed_ratio": 1.0, "volume_ratio": 1.0, "pitch_ratio": 1.0},
+        "request": {"reqid": reqid, "text": text, "text_type": "plain", "operation": "query", "with_frontend": 1},
+    }
+    url = cfg.get("base_url", "https://openspeech.bytedance.com/api/v1/tts").rstrip("/")
+    headers = {"Content-Type": "application/json", "Authorization": "Bearer; " + token}
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if str(data.get("code")) != "30000000":
+        raise RuntimeError("volc tts failed: %r" % (data,))
+    audio = data.get("data")
+    if not audio:
+        raise RuntimeError("volc tts: no data in %r" % (data,))
+    return base64.b64decode(audio)
+
+
+def tts_synthesize(text):
+    provider = TTS_CFG.get("provider", "minimax").lower()
+    if provider == "openai":
+        return tts_openai(text)
+    if provider == "volcengine" or provider == "volc":
+        return tts_volc(text)
+    return tts_minimax(text)
+
+
+def get_ffmpeg_exe():
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+def merge_audio_into_video(video_bytes, audio_bytes, out_path):
+    ffmpeg = get_ffmpeg_exe()
+    workdir = os.path.dirname(out_path)
+    vp = os.path.join(workdir, "_v" + uuid.uuid4().hex + ".mp4")
+    ap = os.path.join(workdir, "_a" + uuid.uuid4().hex + ".mp3")
+    with open(vp, "wb") as f:
+        f.write(video_bytes)
+    with open(ap, "wb") as f:
+        f.write(audio_bytes)
+    try:
+        cmd = [ffmpeg, "-y", "-i", vp, "-i", ap, "-c:v", "copy", "-c:a", "aac",
+               "-map", "0:v:0", "-map", "1:a:0", "-shortest", "-movflags", "+faststart", out_path]
+        subprocess.run(cmd, capture_output=True, timeout=600, check=True)
+    finally:
+        for p in (vp, ap):
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+
+
+class _VideoHandler(_http_server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=VIDEO_DIR, **kwargs)
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+_video_server_ref = None
+
+
+def ensure_video_server():
+    global _video_server_ref
+    if _video_server_ref is not None:
+        return
+    try:
+        if not os.path.isdir(VIDEO_DIR):
+            os.makedirs(VIDEO_DIR, exist_ok=True)
+        server = _socketserver.ThreadingTCPServer((VIDEO_HOST, VIDEO_PORT), _VideoHandler)
+        _video_server_ref = server
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        ctx.log.info("video server started on %s:%d" % (VIDEO_HOST, VIDEO_PORT))
+    except Exception as e:
+        ctx.log.warn("video server start failed: %s" % e)
+
+
+def video_url_for(letter_id):
+    return "http://%s:%d/%s.mp4" % (VIDEO_HOST, VIDEO_PORT, letter_id)
+
+
+def generate_video_reply(letter_id, reply_text):
+    try:
+        ensure_video_server()
+        prompt = reply_text[:500]
+        video_bytes = gen_video(prompt)
+        out_path = os.path.join(VIDEO_DIR, letter_id + ".mp4")
+        if TTS_ENABLED:
+            try:
+                audio_bytes = tts_synthesize(reply_text[:1000])
+                merge_audio_into_video(video_bytes, audio_bytes, out_path)
+            except Exception as e:
+                ctx.log.warn("video %s tts/merge failed, use silent video: %s" % (letter_id, e))
+                with open(out_path, "wb") as f:
+                    f.write(video_bytes)
+        else:
+            with open(out_path, "wb") as f:
+                f.write(video_bytes)
+        with state["lock"]:
+            letter = state["letters"].get(letter_id)
+            if letter:
+                letter["reply_type"] = REPLY_TYPE_MIX_PLAY
+                letter["reply_video_url"] = video_url_for(letter_id)
+                letter["video_ready"] = True
+                save_data()
+        ctx.log.info("video %s generated" % letter_id)
+    except Exception as e:
+        with state["lock"]:
+            letter = state["letters"].get(letter_id)
+            if letter:
+                letter["video_ready"] = False
+                letter["video_fail"] = str(e)[:200]
+                save_data()
+        ctx.log.warn("video %s generation failed: %s" % (letter_id, e))
+
+
 def letter_to_detail(letter):
     replied = letter["status"] == LETTER_STATUS_REPLIED
+    reply_type = letter.get("reply_type", REPLY_TYPE_TEXT if replied else REPLY_TYPE_NONE)
     result = {
         "letterId": letter["id"],
         "isRead": 0 if letter.get("unread") else 1,
@@ -213,16 +510,19 @@ def letter_to_detail(letter):
         "createdAt": letter["created_at"],
         "material": {"stampId": letter.get("stampId", "s1"), "paperId": ""},
         "content": letter["content"],
-        "replyType": REPLY_TYPE_TEXT if replied else REPLY_TYPE_NONE,
+        "replyType": reply_type,
     }
     if replied:
         result["repliedAt"] = letter.get("replied_at") or letter["created_at"]
         result["replyText"] = letter.get("reply_text", "")
+        if letter.get("reply_video_url"):
+            result["replyVideoUrl"] = letter["reply_video_url"]
     return result
 
 
 def letter_to_list_item(letter):
     replied = letter["status"] == LETTER_STATUS_REPLIED
+    reply_type = letter.get("reply_type", REPLY_TYPE_TEXT if replied else REPLY_TYPE_NONE)
     result = {
         "letterId": letter["id"],
         "isRead": 0 if letter.get("unread") else 1,
@@ -230,10 +530,12 @@ def letter_to_list_item(letter):
         "auditStatus": AUDIT_PASSED,
         "summary": letter["summary"],
         "createdAt": letter["created_at"],
-        "replyType": REPLY_TYPE_TEXT if replied else REPLY_TYPE_NONE,
+        "replyType": reply_type,
     }
     if replied:
         result["repliedAt"] = letter.get("replied_at") or letter["created_at"]
+        if letter.get("reply_video_url"):
+            result["replyVideoUrl"] = letter["reply_video_url"]
     return result
 
 
@@ -277,10 +579,14 @@ def generate_reply(letter_id, content):
             letter["status"] = LETTER_STATUS_REPLIED
             letter["replied_at"] = current_ts()
             letter["reply_text"] = reply
+            letter["reply_type"] = REPLY_TYPE_TEXT
             save_data()
         remember("assistant", reply)
         compress_memory()
         ctx.log.info("letter %s replied (len=%d)" % (letter_id, len(reply)))
+        if VIDEO_ENABLED and random.random() < VIDEO_PROBABILITY:
+            ctx.log.info("letter %s triggering video reply" % letter_id)
+            threading.Thread(target=generate_video_reply, args=(letter_id, reply), daemon=True).start()
     except Exception as e:
         with state["lock"]:
             letter = state["letters"].get(letter_id)

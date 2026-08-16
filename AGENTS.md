@@ -6,7 +6,17 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-15，版本 1.1.0）
+## 关键状态（截至 2026-08-16，版本 1.2.0）
+- **视频/语音回信（1.2.0 新增）**：写信后按 `reply.video_probability`（默认 0.3）概率触发视频回信
+  - App 原生支持：`replyType` 枚举 `NONE=0/TEXT=1/SPEECH=2/MIX_PLAY=3/MIX_SVS=4`，非 TEXT 时前端渲染 `<video>`（`src=replyVideoUrl`，16:9），视频**单独交付**。本项目用 **MIX_PLAY=3**（视频+语音）
+  - addon 流程：文本回复保存后，`if VIDEO_ENABLED and random.random() < VIDEO_PROBABILITY` 启动后台线程 → `gen_video()`（视频生成）→ `tts_synthesize()`（语音合成）→ `merge_audio_into_video()`（ffmpeg 混流）→ 存 `videos/<letter_id>.mp4` → letter 设 `reply_type=3` + `reply_video_url`；失败记 `video_fail`
+  - 本地视频服务：`http.server` 线程监听 `127.0.0.1:8765`（VIDEO_PORT），惰性启动（首次触发时），幂等（模块级 `_video_server_ref` 防重复），serve `BASE_DIR/videos`
+  - letter 映射：`letter_to_detail`/`letter_to_list_item` 读 `reply_type`，有 `reply_video_url` 时输出 `replyVideoUrl`（list/detail 均含）
+  - **视频 Provider 三家**（均异步 创建→轮询→下载）：OpenAI `POST {base}/videos`（sora-2/sora-2-pro，**2026-09-24 停服**）；MiniMax `POST {base}/video_generation`（MiniMax-Hailuo-2.3/T2V-01-Director/T2V-01）；火山方舟 `POST {base}/contents/generations/tasks`（doubao-seedance-1-5-pro-251215 等）。config.json `video` 段：provider/api_key/base_url/model/timeout(600)
+  - **TTS 三家**（同步）：OpenAI `POST /v1/audio/speech`（gpt-4o-mini-tts/tts-1/tts-1-hd）；MiniMax `POST /v1/t2a_v2`（speech-2.6-hd 等，返回 base64 `audio_file`）；火山 **openspeech.bytedance.com**（用 AppID+AccessToken，非方舟 key，`Authorization: Bearer; {token}`，seed-tts-1.0/2.0，音色 zh_female_vv_uranus_bigtts）。config.json `tts` 段：provider/api_key/base_url/model/voice/app_id/access_token
+  - **注意火山 TTS base_url 是完整 URL 直接使用**（不拼接 `/tts`）；GUI 的 MODEL_HINTS 已列出各家支持模型/音色提示
+  - **ffmpeg**：imageio-ffmpeg 0.6.0 提供二进制（已装便携版 runtime 和 release runtime，需镜像 `-i https://pypi.tuna.tsinghua.edu.cn/simple`，pypi.org 直连超时）；混流命令 `-c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest -movflags +faststart`
+  - **GUI 视频配置界面**：视频/语音开关、触发概率、三家 provider 下拉（切换自动填默认 base_url/model/voice）、api_key/base_url/model/voice、火山 TTS 专属 app_id/access_token、MODEL_HINTS 提示；保存写 `reply`/`video`/`tts` 三段；窗口 580x960
 - **核心功能已全部打通并验证**：App 登录成功、进入主界面、写信/重发/每日上限均正常
 - 登录方案：`/signIn` 等接口在 addon 中 mock 返回 `{"code":0,"message":"","data":{}}`；mitmproxy 根证书需安装到系统（本机已装，用户级+机器级）
 - letter 拦截：addon 拦截 `/toy/letter/*`（list/detail/send/resend/unread_count/share），返回模拟数据，AI 回信走 `generate_reply` 后台线程
@@ -19,7 +29,7 @@
 - **删除 CA 证书按钮（GUI 新增）**：GUI 证书管理区新增"删除 CA 证书"按钮（`do_uninstall_cert` → `uninstall_cert`），用 `certutil -user -delstore Root mitmproxy` 从用户信任存储删除，无需管理员
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.1.0.exe`：安装包（Inno Setup）
+- `OliviaProxy-Setup-1.2.0.exe`：安装包（Inno Setup）
 - `便携版.zip` + `便携版\OliviaProxy\`：免安装版
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 
@@ -39,9 +49,9 @@
 
 ## 打包命令
 - GUI exe：`D:\Program\python.exe -m PyInstaller --noconfirm --onefile --windowed --name OliviaGUI --icon "D:\OliviaProxy\build\icon.ico" "D:\OliviaProxy\gui\olivia_gui.py"`（输出在运行目录 dist/，复制到便携版和 release）
-- 便携版 zip：用 python zipfile 压缩便携版目录，排除 `debug.log letters.json proxy_backup.txt legal_agreed.txt __pycache__`
+- 便携版 zip：用 python zipfile 压缩便携版目录，排除 `debug.log letters.json memory.json proxy_backup.txt legal_agreed.txt __pycache__ videos`（注意：zip 打包被中断会生成损坏文件，需删除重建并加长超时）
 - 安装包：`"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\Users\ASUS\Desktop\Oliviaproxy\源码\installer.iss"`
-- 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.1.0）
+- 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.2.0）；installer.iss 改后同步 build/ 副本
 
 ## Git（仓库在 D:\OliviaProxy，git 路径 `D:\Program Files\Git\cmd\git.exe`）
 - 跟踪源码 + 构建产物 + 日志；排除 `*.exe`、`letters.json`、`legal_agreed.txt`、`proxy_backup.txt`、`__pycache__`
@@ -68,3 +78,7 @@
 - `openai`: base_url/api_key/model/temperature/max_tokens
 - `persona`: system_prompt/reply_delay_seconds/max_daily_letters（每日写信上限，GUI 可改）
 - `listener`: host/path_prefix（默认 `/toy/letter/`）
+- `reply`（1.2.0）: video_enabled(true)/tts_enabled(true)/video_probability(0.3)
+- `video`（1.2.0）: provider(minimax)/api_key/base_url/model(MiniMax-Hailuo-2.3)/timeout(600)
+- `tts`（1.2.0）: provider(minimax)/api_key/base_url/model(speech-2.6-hd)/voice(female-tianmei)/app_id/access_token
+- config.json 同步 5 份：`D:\OliviaProxy\config.json`、便携版、源码、release、build

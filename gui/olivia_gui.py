@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
@@ -314,11 +314,50 @@ def mark_legal_agreed():
         pass
 
 
+MODEL_HINTS = (
+    "支持模型参考:\n"
+    "· 视频 OpenAI: sora-2 / sora-2-pro (2026-09-24 后停服)\n"
+    "· 视频 MiniMax: MiniMax-Hailuo-2.3 / T2V-01-Director / T2V-01\n"
+    "· 视频 火山引擎: doubao-seedance-1-5-pro-251215 等 Seedance 系列\n"
+    "· 语音 OpenAI: gpt-4o-mini-tts / tts-1 / tts-1-hd (音色 coral/alloy/nova 等)\n"
+    "· 语音 MiniMax: speech-2.8-hd / speech-2.6-hd / speech-02-hd 等\n"
+    "· 语音 火山引擎: seed-tts-1.0 / seed-tts-2.0 (需 App ID + Access Token)\n"
+)
+
+VIDEO_PROVIDERS = ("minimax", "openai", "volcengine")
+VIDEO_DEFAULT_BASE = {
+    "minimax": "https://api.minimaxi.com/v1",
+    "openai": "https://api.openai.com/v1",
+    "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
+}
+VIDEO_DEFAULT_MODEL = {
+    "minimax": "MiniMax-Hailuo-2.3",
+    "openai": "sora-2",
+    "volcengine": "doubao-seedance-1-5-pro-251215",
+}
+TTS_PROVIDERS = ("minimax", "openai", "volcengine")
+TTS_DEFAULT_BASE = {
+    "minimax": "https://api.minimaxi.com/v1",
+    "openai": "https://api.openai.com/v1",
+    "volcengine": "https://openspeech.bytedance.com/api/v1/tts",
+}
+TTS_DEFAULT_MODEL = {
+    "minimax": "speech-2.6-hd",
+    "openai": "gpt-4o-mini-tts",
+    "volcengine": "seed-tts-2.0",
+}
+TTS_DEFAULT_VOICE = {
+    "minimax": "female-tianmei",
+    "openai": "coral",
+    "volcengine": "zh_female_vv_uranus_bigtts",
+}
+
+
 class OliviaGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("%s v%s" % (APP_NAME, APP_VERSION))
-        self.root.geometry("580x720")
+        self.root.geometry("580x960")
         self.root.resizable(False, False)
 
         self.cfg = Config()
@@ -331,6 +370,7 @@ class OliviaGUI:
         self._build_cert_frame()
         self._build_api_frame()
         self._build_persona_frame()
+        self._build_video_frame()
         self._build_status_frame()
         self._build_log_frame()
         self._build_footer()
@@ -498,6 +538,88 @@ class OliviaGUI:
         self.persona.pack(fill="x")
         ttk.Button(f, text="保存人设", command=self.save_persona).pack(anchor="e", pady=(4, 0))
 
+    def _build_video_frame(self):
+        f = ttk.LabelFrame(self.root, text="视频/语音回信（约 30% 概率附带林离的视频回复）", padding=(10, 8))
+        f.pack(fill="x", padx=12, pady=4)
+
+        self.video_enabled = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f, text="启用视频回信", variable=self.video_enabled).grid(row=0, column=0, sticky="w")
+        tk.Label(f, text="视频触发概率").grid(row=0, column=2, sticky="e")
+        self.video_prob = ttk.Entry(f, width=8)
+        self.video_prob.grid(row=0, column=3, sticky="w", padx=(4, 0))
+        self.tts_enabled = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f, text="启用语音(读信)", variable=self.tts_enabled).grid(row=0, column=4, sticky="w", padx=(10, 0))
+
+        tk.Label(f, text="视频 Provider").grid(row=1, column=0, sticky="w")
+        self.video_provider = ttk.Combobox(f, values=VIDEO_PROVIDERS, width=18, state="readonly")
+        self.video_provider.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=2)
+        self.video_provider.bind("<<ComboboxSelected>>", self._on_video_provider_change)
+
+        tk.Label(f, text="视频 API Key").grid(row=2, column=0, sticky="w")
+        self.video_key = ttk.Entry(f, width=42, show="*")
+        self.video_key.grid(row=2, column=1, columnspan=4, sticky="w", padx=(8, 0), pady=2)
+
+        tk.Label(f, text="视频 Base URL").grid(row=3, column=0, sticky="w")
+        self.video_base = ttk.Entry(f, width=42)
+        self.video_base.grid(row=3, column=1, columnspan=4, sticky="w", padx=(8, 0), pady=2)
+
+        tk.Label(f, text="视频 Model").grid(row=4, column=0, sticky="w")
+        self.video_model = ttk.Entry(f, width=42)
+        self.video_model.grid(row=4, column=1, columnspan=4, sticky="w", padx=(8, 0), pady=2)
+
+        tk.Label(f, text="语音 Provider").grid(row=5, column=0, sticky="w")
+        self.tts_provider = ttk.Combobox(f, values=TTS_PROVIDERS, width=18, state="readonly")
+        self.tts_provider.grid(row=5, column=1, sticky="w", padx=(8, 0), pady=2)
+        self.tts_provider.bind("<<ComboboxSelected>>", self._on_tts_provider_change)
+
+        tk.Label(f, text="语音 API Key").grid(row=6, column=0, sticky="w")
+        self.tts_key = ttk.Entry(f, width=42, show="*")
+        self.tts_key.grid(row=6, column=1, columnspan=4, sticky="w", padx=(8, 0), pady=2)
+
+        tk.Label(f, text="语音 Base URL").grid(row=7, column=0, sticky="w")
+        self.tts_base = ttk.Entry(f, width=42)
+        self.tts_base.grid(row=7, column=1, columnspan=4, sticky="w", padx=(8, 0), pady=2)
+
+        tk.Label(f, text="语音 Model").grid(row=8, column=0, sticky="w")
+        self.tts_model = ttk.Entry(f, width=30)
+        self.tts_model.grid(row=8, column=1, sticky="w", padx=(8, 0), pady=2)
+        tk.Label(f, text="音色 Voice").grid(row=8, column=2, sticky="e")
+        self.tts_voice = ttk.Entry(f, width=22)
+        self.tts_voice.grid(row=8, column=3, sticky="w", padx=(4, 0), pady=2)
+
+        tk.Label(f, text="火山 App ID").grid(row=9, column=0, sticky="w")
+        self.tts_app_id = ttk.Entry(f, width=30)
+        self.tts_app_id.grid(row=9, column=1, sticky="w", padx=(8, 0), pady=2)
+        tk.Label(f, text="Access Token").grid(row=9, column=2, sticky="e")
+        self.tts_access = ttk.Entry(f, width=22, show="*")
+        self.tts_access.grid(row=9, column=3, sticky="w", padx=(4, 0), pady=2)
+
+        tk.Label(f, text=MODEL_HINTS, fg="#666", justify="left", anchor="w", font=("Microsoft YaHei UI", 8)).grid(
+            row=10, column=0, columnspan=5, sticky="w", pady=(4, 0))
+        ttk.Button(f, text="保存视频/语音配置", command=self.save_video_config).grid(
+            row=11, column=0, columnspan=5, sticky="w", pady=(6, 0))
+
+    def _on_video_provider_change(self, _evt=None):
+        p = self.video_provider.get()
+        if p in VIDEO_DEFAULT_BASE:
+            self.video_base.delete(0, "end")
+            self.video_base.insert(0, VIDEO_DEFAULT_BASE[p])
+        if p in VIDEO_DEFAULT_MODEL:
+            self.video_model.delete(0, "end")
+            self.video_model.insert(0, VIDEO_DEFAULT_MODEL[p])
+
+    def _on_tts_provider_change(self, _evt=None):
+        p = self.tts_provider.get()
+        if p in TTS_DEFAULT_BASE:
+            self.tts_base.delete(0, "end")
+            self.tts_base.insert(0, TTS_DEFAULT_BASE[p])
+        if p in TTS_DEFAULT_MODEL:
+            self.tts_model.delete(0, "end")
+            self.tts_model.insert(0, TTS_DEFAULT_MODEL[p])
+        if p in TTS_DEFAULT_VOICE:
+            self.tts_voice.delete(0, "end")
+            self.tts_voice.insert(0, TTS_DEFAULT_VOICE[p])
+
     def _build_status_frame(self):
         f = ttk.LabelFrame(self.root, text="运行状态", padding=(10, 8))
         f.pack(fill="x", padx=12, pady=4)
@@ -522,6 +644,9 @@ class OliviaGUI:
     def _sync_from_config(self):
         oa = self.cfg.data.get("openai", {})
         pe = self.cfg.data.get("persona", {})
+        rp = self.cfg.data.get("reply", {})
+        vd = self.cfg.data.get("video", {})
+        tt = self.cfg.data.get("tts", {})
         self.base_url.delete(0, "end")
         self.base_url.insert(0, oa.get("base_url", ""))
         self.api_key.delete(0, "end")
@@ -536,6 +661,37 @@ class OliviaGUI:
         self.max_daily.insert(0, str(pe.get("max_daily_letters", "")))
         self.persona.delete("1.0", "end")
         self.persona.insert("1.0", pe.get("system_prompt", ""))
+
+        self.video_enabled.set(bool(rp.get("video_enabled", True)))
+        self.tts_enabled.set(bool(rp.get("tts_enabled", True)))
+        self.video_prob.delete(0, "end")
+        self.video_prob.insert(0, str(rp.get("video_probability", 0.3)))
+        vp = vd.get("provider", "minimax")
+        if vp not in VIDEO_PROVIDERS:
+            vp = "minimax"
+        self.video_provider.set(vp)
+        self.video_key.delete(0, "end")
+        self.video_key.insert(0, vd.get("api_key", ""))
+        self.video_base.delete(0, "end")
+        self.video_base.insert(0, vd.get("base_url", VIDEO_DEFAULT_BASE.get(vp, "")))
+        self.video_model.delete(0, "end")
+        self.video_model.insert(0, vd.get("model", VIDEO_DEFAULT_MODEL.get(vp, "")))
+        tp = tt.get("provider", "minimax")
+        if tp not in TTS_PROVIDERS:
+            tp = "minimax"
+        self.tts_provider.set(tp)
+        self.tts_key.delete(0, "end")
+        self.tts_key.insert(0, tt.get("api_key", ""))
+        self.tts_base.delete(0, "end")
+        self.tts_base.insert(0, tt.get("base_url", TTS_DEFAULT_BASE.get(tp, "")))
+        self.tts_model.delete(0, "end")
+        self.tts_model.insert(0, tt.get("model", TTS_DEFAULT_MODEL.get(tp, "")))
+        self.tts_voice.delete(0, "end")
+        self.tts_voice.insert(0, tt.get("voice", TTS_DEFAULT_VOICE.get(tp, "")))
+        self.tts_app_id.delete(0, "end")
+        self.tts_app_id.insert(0, tt.get("app_id", ""))
+        self.tts_access.delete(0, "end")
+        self.tts_access.insert(0, tt.get("access_token", ""))
 
     def _log(self, msg):
         self.log.configure(state="normal")
@@ -580,6 +736,39 @@ class OliviaGUI:
         self.cfg.save()
         self._log("配置已保存")
         messagebox.showinfo("保存", "配置已保存")
+
+    def save_video_config(self):
+        merged = dict(self.cfg.data)
+        try:
+            prob = float(self.video_prob.get() or 0.3)
+            prob = max(0.0, min(1.0, prob))
+        except ValueError:
+            prob = 0.3
+        merged["reply"] = {
+            "video_enabled": bool(self.video_enabled.get()),
+            "tts_enabled": bool(self.tts_enabled.get()),
+            "video_probability": prob,
+        }
+        merged["video"] = {
+            "provider": self.video_provider.get() or "minimax",
+            "api_key": self.video_key.get().strip(),
+            "base_url": self.video_base.get().strip(),
+            "model": self.video_model.get().strip(),
+            "timeout": self.cfg.data.get("video", {}).get("timeout", 600),
+        }
+        merged["tts"] = {
+            "provider": self.tts_provider.get() or "minimax",
+            "api_key": self.tts_key.get().strip(),
+            "base_url": self.tts_base.get().strip(),
+            "model": self.tts_model.get().strip(),
+            "voice": self.tts_voice.get().strip(),
+            "app_id": self.tts_app_id.get().strip(),
+            "access_token": self.tts_access.get().strip(),
+        }
+        self.cfg.data = merged
+        self.cfg.save()
+        self._log("视频/语音配置已保存")
+        messagebox.showinfo("保存", "视频/语音配置已保存")
 
     def save_persona(self):
         self.save_config()
