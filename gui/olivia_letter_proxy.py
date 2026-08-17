@@ -402,6 +402,40 @@ def gen_video_volc(prompt):
     raise RuntimeError("volc video timeout")
 
 
+def gen_video_scnet(prompt):
+    cfg = VIDEO_CFG
+    base = cfg.get("base_url", "https://api.scnet.cn/api/llm/v1").rstrip("/")
+    key = cfg.get("api_key", "")
+    model = cfg.get("model", "Seedance2.0")
+    timeout = cfg.get("timeout", 600)
+    resolution = cfg.get("resolution", "720p")
+    ratio = cfg.get("ratio", "16:9")
+    duration = int(cfg.get("duration", 5))
+    params = {"resolution": resolution, "ratio": ratio, "duration": duration}
+    if cfg.get("watermark") is not None:
+        params["watermark"] = bool(cfg.get("watermark"))
+    body = {"model": model, "input": {"prompt": prompt}, "parameters": params}
+    headers = {"X-MultiModal-Async": "true"}
+    data = http_json_request(base + "/videos/generations", body, key, timeout=60, extra_headers=headers)
+    task_id = (data.get("output") or {}).get("task_id")
+    if not task_id:
+        raise RuntimeError("scnet video create: no task_id in %r" % (data,))
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(10)
+        data = http_json_get(base + "/tasks/" + task_id, key, timeout=60)
+        output = data.get("output", data)
+        status = str(output.get("task_status", "")).lower()
+        if status == "succeeded":
+            results = output.get("results") or []
+            if not results:
+                raise RuntimeError("scnet video succeeded but no results: %r" % (output,))
+            return http_download(results[0], None, timeout=300)
+        if status in ("failed", "cancelled", "canceled"):
+            raise RuntimeError("scnet video failed: %r" % (output,))
+    raise RuntimeError("scnet video timeout")
+
+
 def gen_video(prompt):
     reload_config()
     provider = VIDEO_CFG.get("provider", "minimax").lower()
@@ -409,6 +443,8 @@ def gen_video(prompt):
         return gen_video_openai(prompt)
     if provider == "volcengine" or provider == "volc":
         return gen_video_volc(prompt)
+    if provider == "scnet" or provider == "sc":
+        return gen_video_scnet(prompt)
     return gen_video_minimax(prompt)
 
 
@@ -491,6 +527,21 @@ def tts_volc(text):
     return base64.b64decode(audio)
 
 
+def tts_scnet(text):
+    cfg = TTS_CFG
+    base = cfg.get("base_url", "https://api.scnet.cn/api/llm/v1").rstrip("/")
+    key = cfg.get("api_key", "")
+    model = cfg.get("model", "Qwen3-TTS-Instruct-Flash")
+    voice = cfg.get("voice", "Cherry")
+    body = {"model": model, "input": {"text": text, "voice": voice}}
+    data = http_json_request(base + "/audios/generations", body, key, timeout=180)
+    output = data.get("output", data)
+    results = output.get("results") or []
+    if not results:
+        raise RuntimeError("scnet tts: no results in %r" % (data,))
+    return http_download(results[0], None, timeout=180)
+
+
 def tts_synthesize(text):
     reload_config()
     provider = TTS_CFG.get("provider", "minimax").lower()
@@ -498,6 +549,8 @@ def tts_synthesize(text):
         return tts_openai(text)
     if provider == "volcengine" or provider == "volc":
         return tts_volc(text)
+    if provider == "scnet" or provider == "sc":
+        return tts_scnet(text)
     return tts_minimax(text)
 
 
