@@ -760,9 +760,15 @@ LOGIN_PATHS = ("/signIn", "/login", "/signout")
 
 class OliviaLetterProxy:
     def request(self, flow: http.HTTPFlow) -> None:
+        reload_config()
         host = flow.request.pretty_host
         path = flow.request.path or ""
-        if host in DISPATCH_HOSTS:
+        is_dispatch = (
+            host in DISPATCH_HOSTS
+            or ("olivia.miyoushe.com" in host and "dispatch" in (path or "").lower())
+            or ("dispatcher" in host.lower() and "olivia" in host.lower())
+        )
+        if is_dispatch:
             if DISPATCH_ENC_CONF:
                 data = {"enc_conf": DISPATCH_ENC_CONF}
                 resp = {"code": 0, "message": "ok", "data": data}

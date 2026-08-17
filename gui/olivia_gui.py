@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
-APP_VERSION = "1.2.4"
+APP_VERSION = "1.2.5"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
