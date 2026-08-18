@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
-APP_VERSION = "1.2.5"
+APP_VERSION = "1.2.6"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
@@ -320,24 +320,27 @@ MODEL_HINTS = (
     "· 视频 MiniMax: MiniMax-H3 (V2 接口 /v2/video_generation)\n"
     "· 视频 火山引擎: doubao-seedance-1-5-pro-251215 等 Seedance 系列\n"
     "· 视频 算力平台(scnet.cn): Seedance2.0 / Wan2.7-T2V / HappyHorse-1.0-T2V\n"
+    "· 视频 千问DashScope(通义万相): wan2.7-t2v-2026-06-12 / wan2.6-t2v / wan2.2-t2v-plus\n"
     "· 语音 OpenAI: gpt-4o-mini-tts / tts-1 / tts-1-hd (音色 coral/alloy/nova 等)\n"
     "· 语音 MiniMax: speech-2.8-hd / speech-2.6-hd / speech-02-hd 等\n"
     "· 语音 火山引擎: seed-tts-1.0 / seed-tts-2.0 (需 App ID + Access Token)\n"
     "· 语音 算力平台(scnet.cn): Qwen3-TTS-Instruct-Flash (音色 Cherry 等)\n"
 )
 
-VIDEO_PROVIDERS = ("minimax", "openai", "volcengine", "scnet")
+VIDEO_PROVIDERS = ("minimax", "openai", "volcengine", "scnet", "dashscope")
 VIDEO_DEFAULT_BASE = {
     "minimax": "https://api.minimaxi.com/v1",
     "openai": "https://api.openai.com/v1",
     "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
     "scnet": "https://api.scnet.cn/api/llm/v1",
+    "dashscope": "https://dashscope.aliyuncs.com/api/v1",
 }
 VIDEO_DEFAULT_MODEL = {
     "minimax": "MiniMax-H3",
     "openai": "sora-2",
     "volcengine": "doubao-seedance-1-5-pro-251215",
     "scnet": "Seedance2.0",
+    "dashscope": "wan2.7-t2v-2026-06-12",
 }
 TTS_PROVIDERS = ("minimax", "openai", "volcengine", "scnet")
 TTS_DEFAULT_BASE = {

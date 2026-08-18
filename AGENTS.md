@@ -6,14 +6,15 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-18，版本 1.2.5）
+## 关键状态（截至 2026-08-18，版本 1.2.6）
+- **千问 DashScope（通义万相）视频接入（1.2.6 新增）**：新 provider `dashscope`（别名 `ds`/`wan`），base_url `https://dashscope.aliyuncs.com/api/v1`（北京地域），`POST /services/aigc/video-generation/video-synthesis` + header `X-DashScope-Async: enable` → `output.task_id` → 轮询 `GET /tasks/{task_id}`（GET，15s 间隔）→ SUCCEEDED → `output.video_url` 下载（OSS 直链，无鉴权，24h 有效）。body `{model, input:{prompt}, parameters:{resolution,ratio,duration}}`。模型默认 `wan2.7-t2v-2026-06-12`（另有 wan2.6-t2v / wan2.2-t2v-plus）。addon `gen_video_dashscope()`；GUI `VIDEO_PROVIDERS` 加 `dashscope`（默认 base/model）。**已实测**：wan2.7-t2v 生成 5s/720P MP4 ✅（1280x720/30fps/AAC，App 内视频回信 replyType=3 完整链路通过，letter 2009）
 - **dispatch 拦截修复（1.2.5 修复）**：App 报 "failed to get dispatch configuration" 的根因有二：① addon `request()` 未在每次请求时 `reload_config()`，dispatch 分支用旧/空 `DISPATCH_ENC_CONF` → 已修复（`request()` 开头调用 `reload_config()`）；② 手动启动 mitmdump 未传 `--set confdir=<runtime/certs>`，用了 `~/.mitmproxy` 的默认 CA（序列号 `1184c38d`），与系统已信任的 `runtime/certs` CA（序列号 `58f76b63`）不一致 → 所有客户端 TLS 握手失败（"Client TLS handshake failed ... does not trust the proxy's certificate"）。**修复：mitmdump 必须带 `--set confdir=<目录>/runtime/certs` 启动**（GUI 的 `mitmdump_cmd()` 本来就传了，手动启动容易漏）。另将 dispatch 匹配放宽为 host 含 `olivia.miyoushe.com` 且路径含 `dispatch`，或 host 含 `dispatcher`+`olivia`
 - **scnet.cn 算力平台接入（1.2.4 新增）**：新 provider `scnet`（视频 + TTS）
   - base_url `https://api.scnet.cn/api/llm/v1`，鉴权 `Authorization: Bearer <API Key>`
   - **视频**（异步统一模式）：`POST /videos/generations` + header `X-MultiModal-Async: true` → `output.task_id` → 轮询 `GET /tasks/{task_id}`（GET）→ succeeded 后 `output.results[0]` 下载（无需鉴权）。body `{model, input:{prompt}, parameters:{resolution,ratio,duration,watermark}}`。模型：Seedance2.0 / Wan2.7-T2V / HappyHorse-1.0-T2V（同一接口，仅 model 不同）
   - **TTS**（同步）：`POST /audios/generations`，body `{model:"Qwen3-TTS-Instruct-Flash", input:{text, voice}}`，直接返回 `output.results[0]` 音频 URL。音色如 Cherry
   - addon：`gen_video_scnet()` / `tts_scnet()`；GUI `VIDEO_PROVIDERS`/`TTS_PROVIDERS` 加 `scnet`，默认 model/video=Seedance2.0、tts=Qwen3-TTS-Instruct-Flash、voice=Cherry
-  - **已实测**：TTS ✅（Qwen3-TTS WAV 299KB）；视频 Seedance2.0 ✅（1280x720/5s/24fps）、Wan2.7-T2V ✅（1280x720/5s/30fps）、**HappyHorse-1.0-T2V ✅（2026-08-17 实测，1080p/5s，约 2.5 分钟生成）**
+  - **已实测**：TTS ✅（Qwen3-TTS WAV 299KB）；视频 Seedance2.0 ✅（1280x720/5s/24fps）、Wan2.7-T2V ✅（1280x720/5s/30fps）、**HappyHorse-1.0-T2V ✅（2026-08-17 实测，1080p/5s，约 2.5 分钟生成，**注意每日每模型仅限一次**，第二次报 HTTP 433 quota）**
 - **MiniMax 视频 V2 接口修复（1.2.3 修复）**：MiniMax 已把视频模型升级为 **MiniMax-H3**，新接口走 V2（`POST /v2/video_generation` 异步创建 → `GET /v2/query/video_generation/{task_id}` 轮询，成功返回 `task.content.url` 直下，无需鉴权）。旧 V1 接口（`/v1/video_generation` + `/v1/files/retrieve`）已废弃会 404
   - addon `gen_video_minimax` 现自动路由：model 含 `minimax-h` 前缀或 `MiniMax-Hailuo-03` → V2；否则 V1 fallback
   - **V2 轮询必须用 GET**（POST 会 404），新增 `http_json_get()`；轮询间隔 10s（文档推荐）；下载 `content.url` 不带 Authorization
@@ -45,7 +46,7 @@
 - **删除 CA 证书按钮（GUI 新增）**：GUI 证书管理区新增"删除 CA 证书"按钮（`do_uninstall_cert` → `uninstall_cert`），用 `certutil -user -delstore Root mitmproxy` 从用户信任存储删除，无需管理员
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.2.5.exe`：安装包（Inno Setup）
+- `OliviaProxy-Setup-1.2.6.exe`：安装包（Inno Setup）
 - `便携版.zip` + `便携版\OliviaProxy\`：免安装版
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 

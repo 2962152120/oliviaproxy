@@ -436,6 +436,41 @@ def gen_video_scnet(prompt):
     raise RuntimeError("scnet video timeout")
 
 
+def gen_video_dashscope(prompt):
+    cfg = VIDEO_CFG
+    base = cfg.get("base_url", "https://dashscope.aliyuncs.com/api/v1").rstrip("/")
+    key = cfg.get("api_key", "")
+    model = cfg.get("model", "wan2.7-t2v-2026-06-12")
+    timeout = cfg.get("timeout", 600)
+    resolution = cfg.get("resolution", "720P")
+    ratio = cfg.get("ratio", "16:9")
+    duration = int(cfg.get("duration", 5))
+    body = {
+        "model": model,
+        "input": {"prompt": prompt},
+        "parameters": {"resolution": resolution, "ratio": ratio, "duration": duration},
+    }
+    headers = {"X-DashScope-Async": "enable"}
+    data = http_json_request(base + "/services/aigc/video-generation/video-synthesis", body, key, timeout=60, extra_headers=headers)
+    task_id = (data.get("output") or {}).get("task_id")
+    if not task_id:
+        raise RuntimeError("dashscope video create: no task_id in %r" % (data,))
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(15)
+        data = http_json_get(base + "/tasks/" + task_id, key, timeout=60)
+        output = data.get("output", data)
+        status = str(output.get("task_status", "")).lower()
+        if status == "succeeded":
+            url = output.get("video_url") or output.get("url")
+            if not url:
+                raise RuntimeError("dashscope video succeeded but no url: %r" % (output,))
+            return http_download(url, None, timeout=300)
+        if status in ("failed", "cancelled", "canceled"):
+            raise RuntimeError("dashscope video failed: %r" % (output,))
+    raise RuntimeError("dashscope video timeout")
+
+
 def gen_video(prompt):
     reload_config()
     provider = VIDEO_CFG.get("provider", "minimax").lower()
@@ -445,6 +480,8 @@ def gen_video(prompt):
         return gen_video_volc(prompt)
     if provider == "scnet" or provider == "sc":
         return gen_video_scnet(prompt)
+    if provider == "dashscope" or provider == "ds" or provider == "wan":
+        return gen_video_dashscope(prompt)
     return gen_video_minimax(prompt)
 
 
