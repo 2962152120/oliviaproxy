@@ -6,7 +6,14 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-18，版本 1.2.6）
+## 关键状态（截至 2026-08-26，版本 1.2.7）
+- **1.2.7 健壮性优化（代码层面）**：
+  - 日志规范化：addon 内残留 `print()` 全部改为 `ctx.log.info/warn`（mitmproxy 事件日志，非 TTY 时不刷到 stderr 属正常）
+  - HTTP 重试：`http_json_request`/`http_json_get`/`http_download` 统一加重试（默认 3 次，对 408/429/500/502/503/504 与网络抖动退避重试）
+  - **视频/TTS 自动回退**：`gen_video`/`tts_synthesize` 支持 `fallback_provider` 配置。主 provider 失败后（命中瞬时错误特征：433/429/quota/10054/timeout/5xx 等）自动切到 fallback provider。每个 provider 可配独立 `providers.<name>` 子块覆盖 base_url/model/api_key（顶层字段作默认）
+  - 视频生成并发去重：模块级 `_video_in_progress` 集合防同一 letter 重复生成视频（线程安全，finally 清理）
+  - 启动自检：`OliviaLetterProxy.running()` 钩子在代理启动时打印 dispatch enc_conf 是否设置、video/tts 主+fallback provider、各 provider 是否缺 key、video 服务端口与触发概率，缺配置给明确 warn
+  - 用法示例（config.json）：`"video": {"provider":"scnet","fallback_provider":"dashscope","providers":{"dashscope":{"api_key":"<真实key>","model":"wan2.7-t2v-2026-06-12"}}}`
 - **千问 DashScope（通义万相）视频接入（1.2.6 新增）**：新 provider `dashscope`（别名 `ds`/`wan`），base_url `https://dashscope.aliyuncs.com/api/v1`（北京地域），`POST /services/aigc/video-generation/video-synthesis` + header `X-DashScope-Async: enable` → `output.task_id` → 轮询 `GET /tasks/{task_id}`（GET，15s 间隔）→ SUCCEEDED → `output.video_url` 下载（OSS 直链，无鉴权，24h 有效）。body `{model, input:{prompt}, parameters:{resolution,ratio,duration}}`。模型默认 `wan2.7-t2v-2026-06-12`（另有 wan2.6-t2v / wan2.2-t2v-plus）。addon `gen_video_dashscope()`；GUI `VIDEO_PROVIDERS` 加 `dashscope`（默认 base/model）。**已实测**：wan2.7-t2v 生成 5s/720P MP4 ✅（1280x720/30fps/AAC，App 内视频回信 replyType=3 完整链路通过，letter 2009）
 - **dispatch 拦截修复（1.2.5 修复）**：App 报 "failed to get dispatch configuration" 的根因有二：① addon `request()` 未在每次请求时 `reload_config()`，dispatch 分支用旧/空 `DISPATCH_ENC_CONF` → 已修复（`request()` 开头调用 `reload_config()`）；② 手动启动 mitmdump 未传 `--set confdir=<runtime/certs>`，用了 `~/.mitmproxy` 的默认 CA（序列号 `1184c38d`），与系统已信任的 `runtime/certs` CA（序列号 `58f76b63`）不一致 → 所有客户端 TLS 握手失败（"Client TLS handshake failed ... does not trust the proxy's certificate"）。**修复：mitmdump 必须带 `--set confdir=<目录>/runtime/certs` 启动**（GUI 的 `mitmdump_cmd()` 本来就传了，手动启动容易漏）。另将 dispatch 匹配放宽为 host 含 `olivia.miyoushe.com` 且路径含 `dispatch`，或 host 含 `dispatcher`+`olivia`
 - **scnet.cn 算力平台接入（1.2.4 新增）**：新 provider `scnet`（视频 + TTS）
@@ -46,8 +53,8 @@
 - **删除 CA 证书按钮（GUI 新增）**：GUI 证书管理区新增"删除 CA 证书"按钮（`do_uninstall_cert` → `uninstall_cert`），用 `certutil -user -delstore Root mitmproxy` 从用户信任存储删除，无需管理员
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.2.6.exe`：安装包（Inno Setup）
-- `便携版.zip` + `便携版\OliviaProxy\`：免安装版
+- `OliviaProxy-Setup-1.2.7.exe`：安装包（Inno Setup）
+- `便携版1.2.7.zip` + `便携版\OliviaProxy\`：免安装版
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 
 ## 开发目录
@@ -65,10 +72,11 @@
 （GUI 改动同理同步 olivia_gui.py，并重打包 exe）
 
 ## 打包命令
-- GUI exe：`D:\Program\python.exe -m PyInstaller --noconfirm --onefile --windowed --name OliviaGUI --icon "D:\OliviaProxy\build\icon.ico" "D:\OliviaProxy\gui\olivia_gui.py"`（输出在运行目录 dist/，复制到便携版和 release）
+- GUI exe：`python -m PyInstaller --noconfirm --onefile --windowed --name OliviaGUI --distpath "D:\OliviaProxy\release\OliviaProxy" --workpath "D:\OliviaProxy\build\pyi_work" "D:\OliviaProxy\gui\olivia_gui.py"`（直接输出到 release 打包源目录，覆盖旧 exe）
 - 便携版 zip：用 python zipfile 压缩便携版目录，排除 `debug.log letters.json memory.json proxy_backup.txt legal_agreed.txt __pycache__ videos`（注意：zip 打包被中断会生成损坏文件，需删除重建并加长超时）
-- 安装包：`"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\Users\ASUS\Desktop\Oliviaproxy\源码\installer.iss"`
-- 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.2.0）；installer.iss 改后同步 build/ 副本
+  - 安装包：`"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\OliviaProxy\build\installer.iss"`（SrcDir=`D:\OliviaProxy\release\OliviaProxy`；编译约 300s，需长超时）
+  - 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.2.7）；installer.iss 改后同步 源码/ 副本
+  - 便携版 zip：用 `Compress-Archive -Path "D:\OliviaProxy\release\OliviaProxy\*" -DestinationPath "D:\Users\ASUS\Desktop\Oliviaproxy\便携版1.2.7.zip"`（约 100MB；出前确认 config.json 仅占位符 key）
 
 ## Git（仓库在 D:\OliviaProxy，git 路径 `D:\Program Files\Git\cmd\git.exe`）
 - 跟踪源码 + 构建产物 + 日志；排除 `*.exe`、`letters.json`、`legal_agreed.txt`、`proxy_backup.txt`、`__pycache__`
@@ -96,6 +104,6 @@
 - `persona`: system_prompt/reply_delay_seconds/max_daily_letters（每日写信上限，GUI 可改）
 - `listener`: host/path_prefix（默认 `/toy/letter/`）
 - `reply`（1.2.0）: video_enabled(true)/tts_enabled(true)/video_probability(0.3)
-- `video`（1.2.0）: provider(minimax)/api_key/base_url/model(MiniMax-Hailuo-2.3)/timeout(600)
-- `tts`（1.2.0）: provider(minimax)/api_key/base_url/model(speech-2.6-hd)/voice(female-tianmei)/app_id/access_token
+- `video`（1.2.0）: provider(minimax)/api_key/base_url/model(MiniMax-Hailuo-2.3)/timeout(600)；1.2.7 新增 `fallback_provider`（主 provider 瞬时失败自动回退）与 `providers.<name>` 子块（覆盖各 provider 的 base_url/model/api_key，顶层字段作默认）
+- `tts`（1.2.0）: provider(minimax)/api_key/base_url/model(speech-2.6-hd)/voice(female-tianmei)/app_id/access_token；1.2.7 同支持 `fallback_provider`/`providers`
 - config.json 同步 5 份：`D:\OliviaProxy\config.json`、便携版、源码、release、build

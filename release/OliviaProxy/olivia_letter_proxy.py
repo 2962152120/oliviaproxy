@@ -257,7 +257,29 @@ def current_ts():
     return int(time.time())
 
 
-def http_json_request(url, payload, api_key, timeout=180, extra_headers=None):
+def _urlopen_with_retry(req, timeout=180, retries=3, retry_codes=(408, 429, 500, 502, 503, 504)):
+    last = None
+    for attempt in range(retries):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code in retry_codes and attempt < retries - 1:
+                time.sleep(min(2 * (attempt + 1), 10))
+                continue
+            raise
+        except Exception as e:
+            last = e
+            if attempt < retries - 1:
+                time.sleep(min(2 * (attempt + 1), 10))
+                continue
+            raise
+    if last is not None:
+        raise last
+    raise RuntimeError("urlopen failed without error")
+
+
+def http_json_request(url, payload, api_key, timeout=180, extra_headers=None, retries=3):
     headers = {
         "Content-Type": "application/json",
         "Authorization": "Bearer %s" % api_key,
@@ -269,30 +291,30 @@ def http_json_request(url, payload, api_key, timeout=180, extra_headers=None):
         data=json.dumps(payload).encode("utf-8"),
         headers=headers,
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _urlopen_with_retry(req, timeout=timeout, retries=retries) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def http_json_get(url, api_key=None, timeout=180):
+def http_json_get(url, api_key=None, timeout=180, retries=3):
     headers = {}
     if api_key:
         headers["Authorization"] = "Bearer %s" % api_key
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _urlopen_with_retry(req, timeout=timeout, retries=retries) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def http_download(url, api_key=None, timeout=300):
+def http_download(url, api_key=None, timeout=300, retries=3):
     headers = {}
     if api_key:
         headers["Authorization"] = "Bearer %s" % api_key
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _urlopen_with_retry(req, timeout=timeout, retries=retries) as resp:
         return resp.read()
 
 
-def gen_video_openai(prompt):
-    cfg = VIDEO_CFG
+def gen_video_openai(prompt, cfg=None):
+    cfg = cfg if cfg is not None else VIDEO_CFG
     base = cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
     key = cfg.get("api_key", "")
     model = cfg.get("model", "sora-2")
@@ -314,8 +336,8 @@ def gen_video_openai(prompt):
     raise RuntimeError("openai video timeout")
 
 
-def gen_video_minimax(prompt):
-    cfg = VIDEO_CFG
+def gen_video_minimax(prompt, cfg=None):
+    cfg = cfg if cfg is not None else VIDEO_CFG
     base = cfg.get("base_url", "https://api.minimaxi.com/v1").rstrip("/")
     key = cfg.get("api_key", "")
     model = cfg.get("model", "MiniMax-H3")
@@ -375,8 +397,8 @@ def gen_video_minimax(prompt):
     return http_download(base + "/v1/files/retrieve?file_id=" + file_id, key, timeout=300)
 
 
-def gen_video_volc(prompt):
-    cfg = VIDEO_CFG
+def gen_video_volc(prompt, cfg=None):
+    cfg = cfg if cfg is not None else VIDEO_CFG
     base = cfg.get("base_url", "https://ark.cn-beijing.volces.com/api/v3").rstrip("/")
     key = cfg.get("api_key", "")
     model = cfg.get("model", "doubao-seedance-1-5-pro-251215")
@@ -402,8 +424,8 @@ def gen_video_volc(prompt):
     raise RuntimeError("volc video timeout")
 
 
-def gen_video_scnet(prompt):
-    cfg = VIDEO_CFG
+def gen_video_scnet(prompt, cfg=None):
+    cfg = cfg if cfg is not None else VIDEO_CFG
     base = cfg.get("base_url", "https://api.scnet.cn/api/llm/v1").rstrip("/")
     key = cfg.get("api_key", "")
     model = cfg.get("model", "Seedance2.0")
@@ -436,8 +458,8 @@ def gen_video_scnet(prompt):
     raise RuntimeError("scnet video timeout")
 
 
-def gen_video_dashscope(prompt):
-    cfg = VIDEO_CFG
+def gen_video_dashscope(prompt, cfg=None):
+    cfg = cfg if cfg is not None else VIDEO_CFG
     base = cfg.get("base_url", "https://dashscope.aliyuncs.com/api/v1").rstrip("/")
     key = cfg.get("api_key", "")
     model = cfg.get("model", "wan2.7-t2v-2026-06-12")
@@ -471,22 +493,65 @@ def gen_video_dashscope(prompt):
     raise RuntimeError("dashscope video timeout")
 
 
+_VIDEO_FUNCS = {
+    "openai": gen_video_openai,
+    "volcengine": gen_video_volc,
+    "volc": gen_video_volc,
+    "scnet": gen_video_scnet,
+    "sc": gen_video_scnet,
+    "dashscope": gen_video_dashscope,
+    "ds": gen_video_dashscope,
+    "wan": gen_video_dashscope,
+    "minimax": gen_video_minimax,
+}
+
+
+def _video_provider_cfg(name):
+    # 顶层 VIDEO_CFG 作为默认，providers 子块可覆盖 base_url/model/api_key
+    base = dict(VIDEO_CFG)
+    sub = (VIDEO_CFG.get("providers") or {}).get(name) or {}
+    base.update(sub)
+    return base
+
+
+def _video_is_transient(err):
+    s = str(err).lower()
+    return any(t in s for t in (
+        "433", "429", "quota", "rate limit", "10054", "winerror",
+        "timed out", "timeout", "503", "502", "504", "connection reset",
+    ))
+
+
 def gen_video(prompt):
     reload_config()
-    provider = VIDEO_CFG.get("provider", "minimax").lower()
-    if provider == "openai":
-        return gen_video_openai(prompt)
-    if provider == "volcengine" or provider == "volc":
-        return gen_video_volc(prompt)
-    if provider == "scnet" or provider == "sc":
-        return gen_video_scnet(prompt)
-    if provider == "dashscope" or provider == "ds" or provider == "wan":
-        return gen_video_dashscope(prompt)
-    return gen_video_minimax(prompt)
+    primary = (VIDEO_CFG.get("provider") or "minimax").lower()
+    fallback = (VIDEO_CFG.get("fallback_provider") or "").lower()
+    chain = [primary]
+    if fallback and fallback != primary and fallback in _VIDEO_FUNCS:
+        chain.append(fallback)
+    last_err = None
+    for name in chain:
+        fn = _VIDEO_FUNCS.get(name)
+        if fn is None:
+            continue
+        try:
+            ctx.log.info("video: provider=%s" % name)
+            return fn(prompt, _video_provider_cfg(name))
+        except Exception as e:
+            last_err = e
+            if name != chain[-1]:
+                if _video_is_transient(e):
+                    ctx.log.warn("video: %s failed (%s); fallback -> %s" % (name, e, chain[chain.index(name) + 1]))
+                    continue
+                ctx.log.warn("video: %s failed (%s); no fallback" % (name, e))
+            raise
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("video: no provider available")
 
 
-def tts_openai(text):
-    cfg = TTS_CFG
+def tts_openai(text, cfg=None):
+    cfg = cfg if cfg is not None else TTS_CFG
     base = cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
     key = cfg.get("api_key", "")
     model = cfg.get("model", "gpt-4o-mini-tts")
@@ -498,8 +563,8 @@ def tts_openai(text):
         return resp.read()
 
 
-def tts_minimax(text):
-    cfg = TTS_CFG
+def tts_minimax(text, cfg=None):
+    cfg = cfg if cfg is not None else TTS_CFG
     base = cfg.get("base_url", "https://api.minimaxi.com/v1").rstrip("/")
     key = cfg.get("api_key", "")
     model = cfg.get("model", "speech-2.6-hd")
@@ -538,8 +603,8 @@ def tts_minimax(text):
     return base64.b64decode(audio)
 
 
-def tts_volc(text):
-    cfg = TTS_CFG
+def tts_volc(text, cfg=None):
+    cfg = cfg if cfg is not None else TTS_CFG
     app_id = cfg.get("app_id", "")
     token = cfg.get("access_token", "")
     model = cfg.get("model", "seed-tts-2.0")
@@ -564,8 +629,8 @@ def tts_volc(text):
     return base64.b64decode(audio)
 
 
-def tts_scnet(text):
-    cfg = TTS_CFG
+def tts_scnet(text, cfg=None):
+    cfg = cfg if cfg is not None else TTS_CFG
     base = cfg.get("base_url", "https://api.scnet.cn/api/llm/v1").rstrip("/")
     key = cfg.get("api_key", "")
     model = cfg.get("model", "Qwen3-TTS-Instruct-Flash")
@@ -579,16 +644,49 @@ def tts_scnet(text):
     return http_download(results[0], None, timeout=180)
 
 
+_TTS_FUNCS = {
+    "openai": tts_openai,
+    "volcengine": tts_volc,
+    "volc": tts_volc,
+    "scnet": tts_scnet,
+    "sc": tts_scnet,
+    "minimax": tts_minimax,
+}
+
+
+def _tts_provider_cfg(name):
+    base = dict(TTS_CFG)
+    sub = (TTS_CFG.get("providers") or {}).get(name) or {}
+    base.update(sub)
+    return base
+
+
 def tts_synthesize(text):
     reload_config()
-    provider = TTS_CFG.get("provider", "minimax").lower()
-    if provider == "openai":
-        return tts_openai(text)
-    if provider == "volcengine" or provider == "volc":
-        return tts_volc(text)
-    if provider == "scnet" or provider == "sc":
-        return tts_scnet(text)
-    return tts_minimax(text)
+    primary = (TTS_CFG.get("provider") or "minimax").lower()
+    fallback = (TTS_CFG.get("fallback_provider") or "").lower()
+    chain = [primary]
+    if fallback and fallback != primary and fallback in _TTS_FUNCS:
+        chain.append(fallback)
+    last_err = None
+    for name in chain:
+        fn = _TTS_FUNCS.get(name)
+        if fn is None:
+            continue
+        try:
+            ctx.log.info("tts: provider=%s" % name)
+            return fn(text, _tts_provider_cfg(name))
+        except Exception as e:
+            last_err = e
+            if name != chain[-1]:
+                if _video_is_transient(e):
+                    ctx.log.warn("tts: %s failed (%s); fallback -> %s" % (name, e, chain[chain.index(name) + 1]))
+                    continue
+                ctx.log.warn("tts: %s failed (%s); no fallback" % (name, e))
+            raise
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("tts: no provider available")
 
 
 def get_ffmpeg_exe():
@@ -651,7 +749,14 @@ def video_url_for(letter_id):
     return "http://%s:%d/%s.mp4" % (VIDEO_HOST, VIDEO_PORT, letter_id)
 
 
+_video_in_progress = set()
+
+
 def generate_video_reply(letter_id, reply_text):
+    if letter_id in _video_in_progress:
+        ctx.log.info("video %s already in progress, skip" % letter_id)
+        return
+    _video_in_progress.add(letter_id)
     try:
         ensure_video_server()
         prompt = reply_text[:500]
@@ -684,6 +789,8 @@ def generate_video_reply(letter_id, reply_text):
                 letter["video_fail"] = str(e)[:200]
                 save_data()
         ctx.log.warn("video %s generation failed: %s" % (letter_id, e))
+    finally:
+        _video_in_progress.discard(letter_id)
 
 
 def letter_to_detail(letter):
@@ -796,6 +903,25 @@ LOGIN_PATHS = ("/signIn", "/login", "/signout")
 
 
 class OliviaLetterProxy:
+    def running(self) -> None:
+        reload_config()
+        ctx.log.info("=== OliviaLetterProxy started ===")
+        ctx.log.info("dispatch enc_conf: %s" % ("set" if DISPATCH_ENC_CONF else "EMPTY -> clients will get empty config"))
+        vprov = (VIDEO_CFG.get("provider") or "minimax").lower()
+        vfb = (VIDEO_CFG.get("fallback_provider") or "").lower()
+        tprov = (TTS_CFG.get("provider") or "minimax").lower()
+        tfb = (TTS_CFG.get("fallback_provider") or "").lower()
+        ctx.log.info("video provider=%s fallback=%s | tts provider=%s fallback=%s"
+                     % (vprov, vfb or "-", tprov, tfb or "-"))
+        if not OPENAI.get("api_key"):
+            ctx.log.warn("openai api_key is EMPTY -> text replies will fail")
+        if vprov and not _video_provider_cfg(vprov).get("api_key"):
+            ctx.log.warn("video provider %s api_key is EMPTY -> video replies will fail" % vprov)
+        if tprov and not _tts_provider_cfg(tprov).get("api_key"):
+            ctx.log.warn("tts provider %s api_key is EMPTY -> speech will be silent" % tprov)
+        ctx.log.info("video server on %s:%d | video_probability=%.2f"
+                     % (VIDEO_HOST, VIDEO_PORT, VIDEO_PROBABILITY))
+
     def request(self, flow: http.HTTPFlow) -> None:
         reload_config()
         host = flow.request.pretty_host
@@ -820,19 +946,19 @@ class OliviaLetterProxy:
                     },
                 }
             flow.response = json_response(resp)
-            print("DISPATCH HANDLED %s %s" % (flow.request.method, path), flush=True)
+            ctx.log.info("dispatch handled %s %s" % (flow.request.method, path))
             return
 
         if any(path.startswith(p) for p in LOGIN_PATHS):
             flow.response = json_response({"code": 0, "message": "", "data": {}})
-            print("LOGIN MOCK %s %s" % (flow.request.method, path), flush=True)
+            ctx.log.info("login mock %s %s" % (flow.request.method, path))
             return
 
         if not is_letter_flow(flow):
             return
         ep = endpoint(flow.request.path)
         method = flow.request.method.upper()
-        print("INTERCEPT %s %s path=%r" % (method, ep, flow.request.path), flush=True)
+        ctx.log.info("intercept %s %s path=%r" % (method, ep, flow.request.path))
 
         if method == "POST" and ep == "send":
             try:
