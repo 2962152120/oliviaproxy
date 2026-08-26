@@ -13,4 +13,6 @@ proxy_backup.txt
 
 # PyInstaller 临时目录
 build/olivia_gui/
+build/pyi_work/
+build/OliviaGUI.spec
 dist/
