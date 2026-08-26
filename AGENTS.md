@@ -113,3 +113,6 @@
 - `video`（1.2.0）: provider(minimax)/api_key/base_url/model(MiniMax-Hailuo-2.3)/timeout(600)；1.2.7 新增 `fallback_provider`（主 provider 瞬时失败自动回退）与 `providers.<name>` 子块（覆盖各 provider 的 base_url/model/api_key，顶层字段作默认）
 - `tts`（1.2.0）: provider(minimax)/api_key/base_url/model(speech-2.6-hd)/voice(female-tianmei)/app_id/access_token；1.2.7 同支持 `fallback_provider`/`providers`
 - config.json 同步 5 份：`D:\OliviaProxy\config.json`、便携版、源码、release、build
+
+## 更新日志
+- 完整版本历史见 `CHANGELOG.md`（1.2.5 dispatch 修复 / 1.2.6 DashScope 视频 / 1.2.7 健壮性优化 / 1.2.8 主链路重试补全）
