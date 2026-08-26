@@ -6,7 +6,13 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-26，版本 1.2.7）
+## 关键状态（截至 2026-08-26，版本 1.2.8）
+- **1.2.8 优化（补全 1.2.6/1.2.7 主链路健壮性）**：
+  - 文字回信 `call_openai` 与记忆压缩 `compress_memory` 原先走裸 `urllib.request.urlopen`（网络抖动直接失败），现统一改走 `_urlopen_with_retry`（与视频/TTS 一致）
+  - `tts_openai`/`tts_volc` 同样由裸 `urlopen` 改为 `_urlopen_with_retry`
+  - 删除 `list` 接口里把整封信件 JSON 持续追加写 `debug.log` 的遗留诊断代码（写盘频繁且落 PII）
+  - 瞬时错误判定函数 `_video_is_transient` 改名 `_is_transient`，视频/TTS 回退共用
+  - **现状：所有对第三方 API 的 HTTP 请求（文字/TTS/视频/记忆压缩）均经统一重试包装**，仅认证类错误（401 等）立即失败不重试
 - **1.2.7 健壮性优化（代码层面）**：
   - 日志规范化：addon 内残留 `print()` 全部改为 `ctx.log.info/warn`（mitmproxy 事件日志，非 TTY 时不刷到 stderr 属正常）
   - HTTP 重试：`http_json_request`/`http_json_get`/`http_download` 统一加重试（默认 3 次，对 408/429/500/502/503/504 与网络抖动退避重试）
@@ -53,8 +59,8 @@
 - **删除 CA 证书按钮（GUI 新增）**：GUI 证书管理区新增"删除 CA 证书"按钮（`do_uninstall_cert` → `uninstall_cert`），用 `certutil -user -delstore Root mitmproxy` 从用户信任存储删除，无需管理员
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.2.7.exe`：安装包（Inno Setup）
-- `便携版1.2.7.zip` + `便携版\OliviaProxy\`：免安装版
+- `OliviaProxy-Setup-1.2.8.exe`：安装包（Inno Setup）
+- `便携版1.2.8.zip` + `便携版\OliviaProxy\`：免安装版
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 
 ## 开发目录

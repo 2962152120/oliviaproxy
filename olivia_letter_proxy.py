@@ -212,7 +212,7 @@ def compress_memory():
                 "Authorization": "Bearer %s" % OPENAI["api_key"],
             },
         )
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with _urlopen_with_retry(req, timeout=120) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         summary = data["choices"][0]["message"]["content"].strip()
     except Exception as e:
@@ -514,7 +514,7 @@ def _video_provider_cfg(name):
     return base
 
 
-def _video_is_transient(err):
+def _is_transient(err):
     s = str(err).lower()
     return any(t in s for t in (
         "433", "429", "quota", "rate limit", "10054", "winerror",
@@ -540,7 +540,7 @@ def gen_video(prompt):
         except Exception as e:
             last_err = e
             if name != chain[-1]:
-                if _video_is_transient(e):
+                if _is_transient(e):
                     ctx.log.warn("video: %s failed (%s); fallback -> %s" % (name, e, chain[chain.index(name) + 1]))
                     continue
                 ctx.log.warn("video: %s failed (%s); no fallback" % (name, e))
@@ -559,7 +559,7 @@ def tts_openai(text, cfg=None):
     body = {"model": model, "input": text, "voice": voice}
     headers = {"Content-Type": "application/json", "Authorization": "Bearer %s" % key}
     req = urllib.request.Request(base + "/audio/speech", data=json.dumps(body).encode("utf-8"), headers=headers)
-    with urllib.request.urlopen(req, timeout=180) as resp:
+        with _urlopen_with_retry(req, timeout=180) as resp:
         return resp.read()
 
 
@@ -619,7 +619,7 @@ def tts_volc(text, cfg=None):
     url = cfg.get("base_url", "https://openspeech.bytedance.com/api/v1/tts").rstrip("/")
     headers = {"Content-Type": "application/json", "Authorization": "Bearer; " + token}
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-    with urllib.request.urlopen(req, timeout=180) as resp:
+        with _urlopen_with_retry(req, timeout=180) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     if str(data.get("code")) != "30000000":
         raise RuntimeError("volc tts failed: %r" % (data,))
@@ -679,7 +679,7 @@ def tts_synthesize(text):
         except Exception as e:
             last_err = e
             if name != chain[-1]:
-                if _video_is_transient(e):
+                if _is_transient(e):
                     ctx.log.warn("tts: %s failed (%s); fallback -> %s" % (name, e, chain[chain.index(name) + 1]))
                     continue
                 ctx.log.warn("tts: %s failed (%s); no fallback" % (name, e))
@@ -858,7 +858,7 @@ def call_openai(user_text):
             "Authorization": "Bearer %s" % OPENAI["api_key"],
         },
     )
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    with _urlopen_with_retry(req, timeout=180) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     return data["choices"][0]["message"]["content"].strip()
 
@@ -1007,8 +1007,6 @@ class OliviaLetterProxy:
                 "nextCursor": "",
                 "hasMore": False,
             }
-            with open(os.path.join(BASE_DIR, "debug.log"), "a", encoding="utf-8") as f:
-                f.write("LIST RETURNED: %s (query=%s)\n" % (json.dumps(resp, ensure_ascii=False), dict(flow.request.query)))
             flow.response = json_response(resp)
 
         elif method == "GET" and ep == "detail":
