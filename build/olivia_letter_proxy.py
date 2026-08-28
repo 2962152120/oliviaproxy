@@ -235,7 +235,7 @@ def is_letter_flow(flow) -> bool:
     path = flow.request.path or ""
     if flow.request.pretty_host in DISPATCH_HOSTS:
         return True
-    return path.startswith(LISTENER["path_prefix"])
+    return path.startswith(LISTENER.get("path_prefix", "/toy/letter/"))
 
 
 def endpoint(path: str) -> str:
@@ -327,7 +327,7 @@ def gen_video_openai(prompt, cfg=None):
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(15)
-        data = http_json_request(base + "/videos/" + video_id, {}, key, timeout=60)
+        data = http_json_get(base + "/videos/" + video_id, key, timeout=60)
         status = data.get("status")
         if status == "completed":
             return http_download(base + "/videos/" + video_id + "/content", key, timeout=300)
@@ -411,7 +411,7 @@ def gen_video_volc(prompt, cfg=None):
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(15)
-        data = http_json_request(base + "/contents/generations/tasks/" + task_id, {}, key, timeout=60)
+        data = http_json_get(base + "/contents/generations/tasks/" + task_id, key, timeout=60)
         status = str(data.get("status", "")).lower()
         if status == "succeeded":
             content = data.get("content", {})
@@ -727,6 +727,10 @@ class _VideoHandler(_http_server.SimpleHTTPRequestHandler):
         pass
 
 
+class _VideoTCPServer(_socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+
+
 _video_server_ref = None
 
 
@@ -737,7 +741,7 @@ def ensure_video_server():
     try:
         if not os.path.isdir(VIDEO_DIR):
             os.makedirs(VIDEO_DIR, exist_ok=True)
-        server = _socketserver.ThreadingTCPServer((VIDEO_HOST, VIDEO_PORT), _VideoHandler)
+        server = _VideoTCPServer((VIDEO_HOST, VIDEO_PORT), _VideoHandler)
         _video_server_ref = server
         threading.Thread(target=server.serve_forever, daemon=True).start()
         ctx.log.info("video server started on %s:%d" % (VIDEO_HOST, VIDEO_PORT))
@@ -1060,11 +1064,11 @@ class OliviaLetterProxy:
                 letter.pop("reply_video_url", None)
                 letter.pop("video_ready", None)
                 letter.pop("video_fail", None)
+                letter.pop("fail_reason", None)
                 letter.pop("replied_at", None)
                 save_data()
                 content = letter["content"]
             threading.Thread(target=generate_reply, args=(letter_id, content), daemon=True).start()
-            remember("user", content)
             flow.response = json_response({"ok": True})
 
         else:

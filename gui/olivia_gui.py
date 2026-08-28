@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
-APP_VERSION = "1.2.9"
+APP_VERSION = "1.2.10"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
@@ -828,6 +828,11 @@ class OliviaGUI:
 
     def toggle_proxy(self):
         if self.proxy_var.get():
+            if not self._port_listening():
+                self._log("拦截未运行，先启动拦截再启用代理")
+                self.start_proxy()
+                self.refresh_proxy_state()
+                return
             set_proxy(True)
             self._log("系统代理已启用 -> %s" % PROXY_ADDR)
         else:

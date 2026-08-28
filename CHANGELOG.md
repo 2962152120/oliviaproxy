@@ -1,5 +1,12 @@
 # Olivia 来信拦截助手 — 更新日志
 
+## 1.2.10（2026-08-28）
+- **修复视频轮询误用 POST**：OpenAI `gen_video_openai` 与火山 Ark `gen_video_volc` 的异步任务轮询本应 `GET`，原误用 `http_json_request`（POST），现改为 `http_json_get`；MiniMax V1 轮询设计即 POST，保持不变
+- **修复 `resend` 重复记忆**：重发每封信都会 `remember("user", content)`，导致记忆随重发次数线性膨胀；现改为只在收信时记一次，重发不再重复写入
+- **修复 `resend` 残留 `fail_reason`**：FAILED 重发后旧失败原因未清，列表里仍显示旧错误；现 `resend` 时 `pop("fail_reason")`
+- **修复 GUI 代理开关指向死代理**：勾选启用代理时若拦截未运行，会立即把系统代理指向 127.0.0.1:8080 但后端实际没起来，导致断网；现改为先自动启动拦截再启用代理
+- **边缘健壮性**：`is_letter_flow()` 的 `LISTENER["path_prefix"]` 改为 `LISTENER.get("path_prefix", "/toy/letter/")`，config 缺失 listener 时不再 KeyError；视频 HTTP 服务自定义 `ThreadingTCPServer` 设 `allow_reuse_address = True`，避免重启后 8765 端口占用报 `Address already in use`
+
 ## 1.2.9（2026-08-28）
 - **修复 1.2.8 引入的严重回归**：`tts_openai` / `tts_volc` 改走重试包装时缩进错乱，导致 addon 语法错误、mitmdump 无法加载（1.2.8 版本代理完全不可用）。已修复并对全部 addon 副本重新打包
 - **修复 GUI 保存配置丢失扩展字段**：`_collect_video()` 整段覆盖 `video`/`tts` 配置，会静默清掉 1.2.7 的 `fallback_provider` / `providers`（及 resolution/duration/ratio/watermark）。现改为保留这些未编辑字段

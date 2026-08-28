@@ -6,7 +6,12 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-28，版本 1.2.9）
+## 关键状态（截至 2026-08-28，版本 1.2.10）
+- **1.2.10 修复（重要）**：
+  - 视频轮询误用 POST：OpenAI/火山 Ark 异步任务轮询改 `http_json_get`（GET）；MiniMax V1 轮询设计即 POST，保持不变
+  - `resend` 不再重复记记忆（每封只记一次）+ 重发时清 `fail_reason`
+  - GUI 代理开关：启用代理前若拦截未运行则先自动启动拦截，避免把系统代理指向死后端导致断网
+  - 边缘健壮性：`is_letter_flow` 用 `LISTENER.get("path_prefix", "/toy/letter/")`；视频 HTTP 服务 `allow_reuse_address=True`
 - **1.2.9 修复（重要）**：
   - 修复 1.2.8 引入的 addon 语法错误（`tts_openai`/`tts_volc` 改重试时缩进错乱，导致 mitmdump 加载失败、整个拦截不可用）——1.2.8 安装包/便携版不可用，务必用 1.2.9
   - GUI `_collect_video` 保存时保留 `fallback_provider`/`providers`/resolution/duration/ratio/watermark 等未编辑字段（此前整段覆盖会静默清掉 1.2.7 新功能）
