@@ -1,5 +1,13 @@
 # Olivia 来信拦截助手 — 更新日志
 
+## 1.2.9（2026-08-28）
+- **修复 1.2.8 引入的严重回归**：`tts_openai` / `tts_volc` 改走重试包装时缩进错乱，导致 addon 语法错误、mitmdump 无法加载（1.2.8 版本代理完全不可用）。已修复并对全部 addon 副本重新打包
+- **修复 GUI 保存配置丢失扩展字段**：`_collect_video()` 整段覆盖 `video`/`tts` 配置，会静默清掉 1.2.7 的 `fallback_provider` / `providers`（及 resolution/duration/ratio/watermark）。现改为保留这些未编辑字段
+- **修复 `resend` 不清旧回信字段**：重发后 `reply_type`/`reply_video_url`/`video_ready`/`video_fail`/`replied_at` 一并重置，避免状态 FAILED 却残留旧视频
+- **修复回信/视频生成并发竞态**：
+  - `generate_reply` 加防重入（`_reply_in_progress` + 锁），send 后马上 resend 不再重复调 AI
+  - `_video_in_progress` 的"检查-加入"改为加锁，杜绝 TOCTOU 重复生成视频
+
 ## 1.2.8（2026-08-26）
 - 文字回信 `call_openai` 与记忆压缩 `compress_memory` 由裸 `urllib.request.urlopen` 改为统一重试包装 `_urlopen_with_retry`（此前网络抖动会直接失败）
 - `tts_openai` / `tts_volc` 同样由裸 `urlopen` 改为 `_urlopen_with_retry`

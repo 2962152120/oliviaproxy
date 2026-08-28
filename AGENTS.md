@@ -6,7 +6,12 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-26，版本 1.2.8）
+## 关键状态（截至 2026-08-28，版本 1.2.9）
+- **1.2.9 修复（重要）**：
+  - 修复 1.2.8 引入的 addon 语法错误（`tts_openai`/`tts_volc` 改重试时缩进错乱，导致 mitmdump 加载失败、整个拦截不可用）——1.2.8 安装包/便携版不可用，务必用 1.2.9
+  - GUI `_collect_video` 保存时保留 `fallback_provider`/`providers`/resolution/duration/ratio/watermark 等未编辑字段（此前整段覆盖会静默清掉 1.2.7 新功能）
+  - `resend` 重置 `reply_type`/`reply_video_url`/`video_ready`/`video_fail`/`replied_at`
+  - `generate_reply` 防重入 + `_video_in_progress` 加锁（消除 send+resend 重复调 AI、视频重复生成）
 - **1.2.8 优化（补全 1.2.6/1.2.7 主链路健壮性）**：
   - 文字回信 `call_openai` 与记忆压缩 `compress_memory` 原先走裸 `urllib.request.urlopen`（网络抖动直接失败），现统一改走 `_urlopen_with_retry`（与视频/TTS 一致）
   - `tts_openai`/`tts_volc` 同样由裸 `urlopen` 改为 `_urlopen_with_retry`

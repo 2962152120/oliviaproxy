@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
-APP_VERSION = "1.2.8"
+APP_VERSION = "1.2.9"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
@@ -756,28 +756,39 @@ class OliviaGUI:
             prob = max(0.0, min(1.0, prob))
         except ValueError:
             prob = 0.3
+        old_video = self.cfg.data.get("video", {})
+        old_tts = self.cfg.data.get("tts", {})
+        video = {
+            "provider": self.video_provider.get() or "minimax",
+            "api_key": self.video_key.get().strip(),
+            "base_url": self.video_base.get().strip(),
+            "model": self.video_model.get().strip(),
+            "timeout": old_video.get("timeout", 600),
+        }
+        tts = {
+            "provider": self.tts_provider.get() or "minimax",
+            "api_key": self.tts_key.get().strip(),
+            "base_url": self.tts_base.get().strip(),
+            "model": self.tts_model.get().strip(),
+            "voice": self.tts_voice.get().strip(),
+            "app_id": self.tts_app_id.get().strip(),
+            "access_token": self.tts_access.get().strip(),
+        }
+        # 保留 GUI 未编辑的扩展字段（1.2.7+：fallback_provider/providers，以及 resolution/duration/ratio/watermark）
+        for k in ("fallback_provider", "providers", "resolution", "duration", "ratio", "watermark"):
+            if k in old_video and k not in video:
+                video[k] = old_video[k]
+        for k in ("fallback_provider", "providers"):
+            if k in old_tts and k not in tts:
+                tts[k] = old_tts[k]
         return {
             "reply": {
                 "video_enabled": bool(self.video_enabled.get()),
                 "tts_enabled": bool(self.tts_enabled.get()),
                 "video_probability": prob,
             },
-            "video": {
-                "provider": self.video_provider.get() or "minimax",
-                "api_key": self.video_key.get().strip(),
-                "base_url": self.video_base.get().strip(),
-                "model": self.video_model.get().strip(),
-                "timeout": self.cfg.data.get("video", {}).get("timeout", 600),
-            },
-            "tts": {
-                "provider": self.tts_provider.get() or "minimax",
-                "api_key": self.tts_key.get().strip(),
-                "base_url": self.tts_base.get().strip(),
-                "model": self.tts_model.get().strip(),
-                "voice": self.tts_voice.get().strip(),
-                "app_id": self.tts_app_id.get().strip(),
-                "access_token": self.tts_access.get().strip(),
-            },
+            "video": video,
+            "tts": tts,
         }
 
     def save_all_config(self):

@@ -559,7 +559,7 @@ def tts_openai(text, cfg=None):
     body = {"model": model, "input": text, "voice": voice}
     headers = {"Content-Type": "application/json", "Authorization": "Bearer %s" % key}
     req = urllib.request.Request(base + "/audio/speech", data=json.dumps(body).encode("utf-8"), headers=headers)
-        with _urlopen_with_retry(req, timeout=180) as resp:
+    with _urlopen_with_retry(req, timeout=180) as resp:
         return resp.read()
 
 
@@ -619,7 +619,7 @@ def tts_volc(text, cfg=None):
     url = cfg.get("base_url", "https://openspeech.bytedance.com/api/v1/tts").rstrip("/")
     headers = {"Content-Type": "application/json", "Authorization": "Bearer; " + token}
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-        with _urlopen_with_retry(req, timeout=180) as resp:
+    with _urlopen_with_retry(req, timeout=180) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     if str(data.get("code")) != "30000000":
         raise RuntimeError("volc tts failed: %r" % (data,))
@@ -750,13 +750,15 @@ def video_url_for(letter_id):
 
 
 _video_in_progress = set()
+_video_in_progress_lock = threading.Lock()
 
 
 def generate_video_reply(letter_id, reply_text):
-    if letter_id in _video_in_progress:
-        ctx.log.info("video %s already in progress, skip" % letter_id)
-        return
-    _video_in_progress.add(letter_id)
+    with _video_in_progress_lock:
+        if letter_id in _video_in_progress:
+            ctx.log.info("video %s already in progress, skip" % letter_id)
+            return
+        _video_in_progress.add(letter_id)
     try:
         ensure_video_server()
         prompt = reply_text[:500]
@@ -790,7 +792,8 @@ def generate_video_reply(letter_id, reply_text):
                 save_data()
         ctx.log.warn("video %s generation failed: %s" % (letter_id, e))
     finally:
-        _video_in_progress.discard(letter_id)
+        with _video_in_progress_lock:
+            _video_in_progress.discard(letter_id)
 
 
 def letter_to_detail(letter):
@@ -863,11 +866,20 @@ def call_openai(user_text):
     return data["choices"][0]["message"]["content"].strip()
 
 
+_reply_in_progress = set()
+_reply_in_progress_lock = threading.Lock()
+
+
 def generate_reply(letter_id, content):
-    reload_config()
-    delay = PERSONA.get("reply_delay_seconds", 20)
-    time.sleep(delay)
+    with _reply_in_progress_lock:
+        if letter_id in _reply_in_progress:
+            ctx.log.info("reply %s already in progress, skip" % letter_id)
+            return
+        _reply_in_progress.add(letter_id)
     try:
+        reload_config()
+        delay = PERSONA.get("reply_delay_seconds", 20)
+        time.sleep(delay)
         reply = call_openai(content)
         with state["lock"]:
             letter = state["letters"].get(letter_id)
@@ -892,6 +904,9 @@ def generate_reply(letter_id, content):
                 letter["fail_reason"] = str(e)
                 save_data()
         ctx.log.warn("letter %s generation failed: %s" % (letter_id, e))
+    finally:
+        with _reply_in_progress_lock:
+            _reply_in_progress.discard(letter_id)
 
 
 load_data()
@@ -1041,6 +1056,11 @@ class OliviaLetterProxy:
                     return
                 letter["status"] = LETTER_STATUS_PENDING
                 letter["reply_text"] = ""
+                letter["reply_type"] = REPLY_TYPE_NONE
+                letter.pop("reply_video_url", None)
+                letter.pop("video_ready", None)
+                letter.pop("video_fail", None)
+                letter.pop("replied_at", None)
                 save_data()
                 content = letter["content"]
             threading.Thread(target=generate_reply, args=(letter_id, content), daemon=True).start()
