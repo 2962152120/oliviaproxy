@@ -75,7 +75,8 @@
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
 - `OliviaProxy-Setup-<ver>.exe`：安装包（Inno Setup，编译输出到 `D:\OliviaProxy\release\`）
-- `便携版<ver>.zip` + `便携版<ver>\`：免安装版。**注意：便携版目录名自带版本号，每版一个独立目录**（当前 `便携版1.2.10\`），不是固定 `便携版\`
+- `便携版<ver>.zip` + `便携版<ver>\`：免安装版。**注意：便携版目录名自带版本号，每版一个独立目录**（当前 `便携版1.2.11\`），不是固定 `便携版\`
+- 便携版 zip 打包用 `D:\OliviaProxy\build\make_zip.py`（改脚本里的 src/dst 路径即可；排除 `__pycache__ videos debug.log letters.json memory.json proxy_backup.txt legal_agreed.txt`；约 130s，输出 ~86MB）
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
 - 历史目录 `便携版\`（1.2.6 时代）与 `便携版1.2.2~1.2.9\` 均为旧版本残留，不再维护
 
