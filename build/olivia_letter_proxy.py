@@ -239,8 +239,7 @@ def is_letter_flow(flow) -> bool:
 
 
 def endpoint(path: str) -> str:
-    prefix = LISTENER.get("path_prefix", "/toy/letter/")
-    return path[len(prefix):].split("?")[0]
+    return path[len(LISTENER["path_prefix"]):].split("?")[0]
 
 
 def json_response(data, status=200):
@@ -1018,8 +1017,7 @@ class OliviaLetterProxy:
                 today = time.strftime("%Y-%m-%d", time.localtime())
                 sent_today = sum(1 for L in state["letters"].values()
                                  if time.strftime("%Y-%m-%d", time.localtime(L["created_at"])) == today)
-                max_daily = int(PERSONA.get("max_daily_letters", 3))
-                remaining = max(0, max_daily - sent_today)
+                remaining = max(0, PERSONA["max_daily_letters"] - sent_today)
                 page = items[:page_size]
             resp = {
                 "list": page,
