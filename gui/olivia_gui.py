@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 
 APP_NAME = "Olivia 来信拦截助手"
-APP_VERSION = "1.2.10"
+APP_VERSION = "1.2.11"
 PROXY_ADDR = "127.0.0.1:8080"
 LISTEN_PORT = "8080"
 
@@ -868,10 +868,6 @@ class OliviaGUI:
         if not os.path.exists(ADDON_PATH):
             self._log("未找到拦截脚本 olivia_letter_proxy.py")
             return
-        if not self.proxy_var.get():
-            set_proxy(True)
-            self.proxy_var.set(True)
-            self._log("系统代理已启用 -> %s" % PROXY_ADDR)
         cmd = mitmdump_cmd()
         self._log("启动: %s" % " ".join(cmd))
         try:
@@ -887,7 +883,50 @@ class OliviaGUI:
             messagebox.showerror("启动失败", str(e))
             return
         threading.Thread(target=self._drain, args=(self.proc,), daemon=True).start()
-        self._log("拦截已启动 (端口 8080)")
+        self._log("拦截进程已启动，等待端口 %s 就绪..." % LISTEN_PORT)
+        # 端口真正监听后再开系统代理，避免指向未就绪的后端导致断网
+        threading.Thread(target=self._enable_proxy_when_ready, daemon=True).start()
+
+    def _wait_port_ready(self, timeout=15):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._port_listening():
+                return True
+            proc = self.proc
+            if proc is not None and proc.poll() is not None:
+                return False
+            time.sleep(0.5)
+        return self._port_listening()
+
+    def _enable_proxy_when_ready(self):
+        ok = self._wait_port_ready()
+        try:
+            self.root.after(0, self._on_proxy_ready, ok)
+        except RuntimeError:
+            # 等待期间主窗口已销毁，无需再回调
+            pass
+
+    def _on_proxy_ready(self, ok):
+        if not ok:
+            self._log("拦截启动超时：端口 %s 未监听，系统代理保持关闭（避免断网）" % LISTEN_PORT)
+            messagebox.showwarning(
+                "启动超时",
+                "拦截进程已启动，但端口 %s 未进入监听状态。\n\n"
+                "为避免系统代理指向不可用的后端导致断网，系统代理未启用。\n"
+                "请查看下方日志排查（常见原因：addon 加载失败、端口被占用、运行时缺失）。" % LISTEN_PORT)
+            self.refresh_status()
+            return
+        proc = self.proc
+        if proc is None or proc.poll() is not None:
+            self._log("拦截进程已退出，系统代理保持关闭")
+            self.refresh_status()
+            return
+        if not self.proxy_var.get():
+            set_proxy(True)
+            self.proxy_var.set(True)
+            self._log("系统代理已启用 -> %s" % PROXY_ADDR)
+        self._log("拦截已启动 (端口 %s)" % LISTEN_PORT)
+        self.refresh_status()
 
     def stop_proxy(self):
         if self.proc and self.proc.poll() is None:

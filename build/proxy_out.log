@@ -1,0 +1,13 @@
+[23:48:57.947] Loading script olivia_letter_proxy.py
+[23:48:58.119] HTTP(S) proxy listening at *:8080.
+[23:48:58.137] === OliviaLetterProxy started ===
+[23:48:58.137] dispatch enc_conf: set
+[23:48:58.137] video provider=dashscope fallback=- | tts provider=minimax fallback=-
+[23:48:58.137] openai api_key is EMPTY -> text replies will fail
+[23:48:58.138] video provider dashscope api_key is EMPTY -> video replies will fail
+[23:48:58.138] tts provider minimax api_key is EMPTY -> speech will be silent
+[23:48:58.142] video server on 127.0.0.1:8765 | video_probability=1.00
+[23:51:11.506][127.0.0.1:64456] client connect
+[23:51:11.517] intercept GET list path='/toy/letter/list?pageSize=5'
+127.0.0.1:64456: GET http://olivia.miyoushe.com/toy/letter/list?pageSize=5
+              << 200 OK 1.4k

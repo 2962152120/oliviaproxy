@@ -6,7 +6,12 @@
 - 用 OpenAI 兼容 API（DeepSeek）生成回信
 - 打包成 Windows 安装包 + 便携版交付
 
-## 关键状态（截至 2026-08-28，版本 1.2.10）
+## 关键状态（截至 2026-08-29，版本 1.2.11）
+- **1.2.11 修复（重要）**：三处配置硬取/启动顺序缺陷
+  - `endpoint()` 补 `LISTENER.get("path_prefix", "/toy/letter/")` 默认值（1.2.10 只补了 `is_letter_flow`，漏了这里）
+  - `list` 接口 `PERSONA.get("max_daily_letters", 3)`，缺 persona 段不再 KeyError
+  - GUI `start_proxy` 改为**先启动进程、等 8080 真正监听后再开系统代理**（此前先开代理后启动，失败会断网）；超时 15s 或进程退出则保持代理关闭并提示
+  - 新增 `_wait_port_ready` / `_enable_proxy_when_ready` / `_on_proxy_ready` 三个方法
 - **1.2.10 修复（重要）**：
   - 视频轮询误用 POST：OpenAI/火山 Ark 异步任务轮询改 `http_json_get`（GET）；MiniMax V1 轮询设计即 POST，保持不变
   - `resend` 不再重复记记忆（每封只记一次）+ 重发时清 `fail_reason`
@@ -69,30 +74,41 @@
 - **删除 CA 证书按钮（GUI 新增）**：GUI 证书管理区新增"删除 CA 证书"按钮（`do_uninstall_cert` → `uninstall_cert`），用 `certutil -user -delstore Root mitmproxy` 从用户信任存储删除，无需管理员
 
 ## 交付物（桌面 `D:\Users\ASUS\Desktop\Oliviaproxy\`）
-- `OliviaProxy-Setup-1.2.8.exe`：安装包（Inno Setup）
-- `便携版1.2.8.zip` + `便携版\OliviaProxy\`：免安装版
+- `OliviaProxy-Setup-<ver>.exe`：安装包（Inno Setup，编译输出到 `D:\OliviaProxy\release\`）
+- `便携版<ver>.zip` + `便携版<ver>\`：免安装版。**注意：便携版目录名自带版本号，每版一个独立目录**（当前 `便携版1.2.10\`），不是固定 `便携版\`
 - `源码\`：分发给用户的源码（config.json 是占位符 key 模板）
+- 历史目录 `便携版\`（1.2.6 时代）与 `便携版1.2.2~1.2.9\` 均为旧版本残留，不再维护
 
 ## 开发目录
-- `D:\OliviaProxy\gui\olivia_gui.py`：GUI 主程序源码
+- `D:\OliviaProxy\gui\olivia_gui.py`：GUI 主程序源码（版本号 `APP_VERSION` 在此）
 - `D:\OliviaProxy\gui\olivia_letter_proxy.py`：拦截 addon（源码主版，改这里）
-- `D:\OliviaProxy\release\OliviaProxy\`：安装包打包源（从便携版同步）
-- `D:\OliviaProxy\build\`：构建产物/installer.iss
+- `D:\OliviaProxy\release\OliviaProxy\`：安装包打包源（addon + exe + config.json + runtime）
+- `D:\OliviaProxy\build\`：构建产物/installer.iss/pyi_env（PyInstaller 隔离环境）
 - `D:\Users\ASUS\Desktop\Oliviaproxy\源码\installer.iss`：安装脚本（版本号在此）
 
-## 修改文件后必须同步的四处
-1. `D:\OliviaProxy\gui\olivia_letter_proxy.py`（addon 主版）
-2. `D:\Users\ASUS\Desktop\Oliviaproxy\便携版\OliviaProxy\olivia_letter_proxy.py`
-3. `D:\Users\ASUS\Desktop\Oliviaproxy\源码\olivia_letter_proxy.py`
-4. 安装包打包源 `D:\OliviaProxy\release\OliviaProxy\olivia_letter_proxy.py`
-（GUI 改动同理同步 olivia_gui.py，并重打包 exe）
+## 修改文件后必须同步（1.2.11 实测路径）
+addon `olivia_letter_proxy.py` 共 6 处：
+1. `D:\OliviaProxy\gui\olivia_letter_proxy.py`（**主版，改这里**）
+2. `D:\OliviaProxy\olivia_letter_proxy.py`
+3. `D:\OliviaProxy\release\OliviaProxy\olivia_letter_proxy.py`（打包源）
+4. `D:\OliviaProxy\build\olivia_letter_proxy.py`
+5. `D:\Users\ASUS\Desktop\Oliviaproxy\便携版<ver>\olivia_letter_proxy.py`
+6. `D:\Users\ASUS\Desktop\Oliviaproxy\源码\olivia_letter_proxy.py`
+
+GUI `olivia_gui.py` 共 2 处：`D:\OliviaProxy\gui\olivia_gui.py`（主版）+ `D:\Users\ASUS\Desktop\Oliviaproxy\源码\olivia_gui.py`。
+**GUI 改完必须重打包 exe** —— 便携版与安装包里只有 exe，没有 py，不同步 exe 等于没改。
+同步后用 `md5sum` 逐个校验哈希一致。
 
 ## 打包命令
-- GUI exe：`python -m PyInstaller --noconfirm --onefile --windowed --name OliviaGUI --distpath "D:\OliviaProxy\release\OliviaProxy" --workpath "D:\OliviaProxy\build\pyi_work" "D:\OliviaProxy\gui\olivia_gui.py"`（直接输出到 release 打包源目录，覆盖旧 exe）
-- 便携版 zip：用 python zipfile 压缩便携版目录，排除 `debug.log letters.json memory.json proxy_backup.txt legal_agreed.txt __pycache__ videos`（注意：zip 打包被中断会生成损坏文件，需删除重建并加长超时）
-  - 安装包：`"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\OliviaProxy\build\installer.iss"`（SrcDir=`D:\OliviaProxy\release\OliviaProxy`；编译约 300s，需长超时）
-  - 安装包版本在 installer.iss：`MyAppVersion` 和 `OutputBaseFilename`（如 1.2.7）；installer.iss 改后同步 源码/ 副本
-  - 便携版 zip：用 `Compress-Archive -Path "D:\OliviaProxy\release\OliviaProxy\*" -DestinationPath "D:\Users\ASUS\Desktop\Oliviaproxy\便携版1.2.7.zip"`（约 100MB；出前确认 config.json 仅占位符 key）
+- **PyInstaller 环境（重要）**：系统 python 与托管 python 都没有 tkinter，装不了 PyInstaller；唯一可用的是交付运行时 `D:\OliviaProxy\release\OliviaProxy\runtime\python.exe`（Python 3.13.15，自带 tkinter 8.6）。为不污染交付 runtime，PyInstaller 装在隔离目录：
+  - 安装（首次，约 6 分钟，需后台长超时）：
+    `runtime\python.exe -m pip install --target "D:\OliviaProxy\build\pyi_env" --upgrade pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple`
+  - 打包（约 3 分钟）：
+    `PYTHONPATH=D:\OliviaProxy\build\pyi_env runtime\python.exe -m PyInstaller --noconfirm --onefile --windowed --name OliviaGUI --distpath "D:\OliviaProxy\release\OliviaProxy" --workpath "D:\OliviaProxy\build\pyi_work" "D:\OliviaProxy\gui\olivia_gui.py"`
+  - 打完把 `release\OliviaProxy\OliviaGUI.exe` 复制到便携版目录覆盖
+- 安装包：`"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\OliviaProxy\build\installer.iss"`（SrcDir=`D:\OliviaProxy\release\OliviaProxy`；编译约 300s，需长超时）
+- 便携版 zip：用 python zipfile 压缩便携版目录，排除 `debug.log letters.json memory.json proxy_backup.txt legal_agreed.txt __pycache__ videos`（中断会生成损坏文件，需删除重建）
+- 版本号 2 处联动：GUI `APP_VERSION` 与 installer.iss 的 `MyAppVersion`/`OutputBaseFilename`；installer.iss 改后同步 `源码\installer.iss`
 
 ## Git（仓库在 D:\OliviaProxy，git 路径 `D:\Program Files\Git\cmd\git.exe`）
 - 跟踪源码 + 构建产物 + 日志；排除 `*.exe`、`letters.json`、`legal_agreed.txt`、`proxy_backup.txt`、`__pycache__`
@@ -125,4 +141,11 @@
 - config.json 同步 5 份：`D:\OliviaProxy\config.json`、便携版、源码、release、build
 
 ## 更新日志
-- 完整版本历史见 `CHANGELOG.md`（1.2.5 dispatch 修复 / 1.2.6 DashScope 视频 / 1.2.7 健壮性优化 / 1.2.8 主链路重试补全）
+- 完整版本历史见 `CHANGELOG.md`（1.2.5 dispatch 修复 / 1.2.6 DashScope 视频 / 1.2.7 健壮性优化 / 1.2.8 主链路重试补全 / 1.2.9 语法回归修复 / 1.2.10 视频轮询与代理开关 / 1.2.11 配置硬取与启动顺序）
+
+## 待办 / 已知问题（1.2.11 仍未处理）
+- `send` 接口不校验每日上限：`max_daily_letters` 只在 `list` 返回 remainingToday，后端不拦超限发信
+- 回信完成后不设 `unread=True`，`unread_count` 恒为 0，App 端无未读红点
+- `is_letter_flow` / `LOGIN_PATHS` 不校验 host，任何 host 的 `/signIn`、`/toy/letter/` 都会被 mock（过度拦截）
+- GUI 无 `fallback_provider` 编辑项（1.2.7 功能），只能手工改 config.json
+- `call_openai` / `compress_memory` 仍硬取 `OPENAI[...]`，缺 openai 段会 KeyError（有启动自检 warn 兜底，未修）

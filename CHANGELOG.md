@@ -1,5 +1,11 @@
 # Olivia 来信拦截助手 — 更新日志
 
+## 1.2.11（2026-08-29）
+- **修复 `endpoint()` 硬取配置**：第 242 行仍为 `LISTENER["path_prefix"]`，config.json 缺 `listener` 段时每个信件请求都会 KeyError（1.2.10 只给 `is_letter_flow` 补了默认值，漏了这里）。现改为 `LISTENER.get("path_prefix", "/toy/letter/")`
+- **修复 `list` 接口硬取配置**：`remaining` 计算用 `PERSONA["max_daily_letters"]`，缺 `persona` 段时拉列表直接 KeyError。现改为 `PERSONA.get("max_daily_letters", 3)`
+- **修复 GUI "启动拦截" 的断网风险**：原先先 `set_proxy(True)` 再 `Popen(mitmdump)`，进程启动失败（addon 语法错误、端口占用、运行时缺失）会把系统代理指向不可用的 8080 导致整机断网。现改为：先启动进程 → 后台线程等待 8080 真正进入监听（默认 15s 超时）→ 就绪后才开系统代理；超时或进程中途退出则**保持代理关闭**并弹窗提示排查方向（1.2.10 只修了"启用代理"勾选框这一条路径，直接点"启动拦截"仍有风险）
+- 等待逻辑放在后台线程（不卡 UI）；若等待期间主窗口已关闭，`root.after` 回调安全跳过，不再抛 `RuntimeError: main thread is not in main loop`
+
 ## 1.2.10（2026-08-28）
 - **修复视频轮询误用 POST**：OpenAI `gen_video_openai` 与火山 Ark `gen_video_volc` 的异步任务轮询本应 `GET`，原误用 `http_json_request`（POST），现改为 `http_json_get`；MiniMax V1 轮询设计即 POST，保持不变
 - **修复 `resend` 重复记忆**：重发每封信都会 `remember("user", content)`，导致记忆随重发次数线性膨胀；现改为只在收信时记一次，重发不再重复写入
