@@ -2,17 +2,26 @@ __pycache__/
 *.pyc
 *.pyo
 
-# 隐私/运行时状态（不纳入版本控制）
+# 隐私/运行时状态
 letters.json
 memory.json
 legal_agreed.txt
 proxy_backup.txt
 
-# 安装包（大二进制，不纳入 git）
+# 日志
+*.log
+*.err.log
+*.out.log
+
+# 安装包/大二进制
 *.exe
+release/
 
 # PyInstaller 临时目录
-build/olivia_gui/
-build/pyi_work/
-build/OliviaGUI.spec
+build/
 dist/
+
+# 测试/临时文件
+test_body.json
+raw_list.json
+diag_*

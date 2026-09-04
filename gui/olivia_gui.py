@@ -5,6 +5,8 @@ import sys
 import threading
 import time
 import webbrowser
+import urllib.request
+import urllib.error
 import ctypes
 from datetime import datetime
 import tkinter as tk
@@ -367,7 +369,7 @@ class OliviaGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("%s v%s" % (APP_NAME, APP_VERSION))
-        self.root.geometry("580x960")
+        self.root.geometry("580x1180")
         self.root.resizable(False, False)
 
         self.cfg = Config()
@@ -381,6 +383,7 @@ class OliviaGUI:
         self._build_api_frame()
         self._build_persona_frame()
         self._build_video_frame()
+        self._build_compose_frame()
         self._build_status_frame()
         self._build_log_frame()
         self._build_footer()
@@ -653,6 +656,116 @@ class OliviaGUI:
         tk.Label(foot, text="仅在本机生效 · 停止拦截并还原代理后不影响其他网络访问",
                  fg="#999", font=("Microsoft YaHei UI", 8)).pack(side="left")
         ttk.Button(foot, text="退出", command=self.on_close).pack(side="right")
+
+    def _unwrap(self, r):
+        if isinstance(r, dict) and "code" in r and "data" in r:
+            return r["data"]
+        return r
+
+    def _proxy_post(self, path, payload):
+        url = "http://%s%s" % (PROXY_ADDR, path)
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def _proxy_get(self, path):
+        url = "http://%s%s" % (PROXY_ADDR, path)
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def _build_compose_frame(self):
+        f = ttk.LabelFrame(self.root, text="写信（直连本地代理发送，无需手机 App）", padding=(10, 8))
+        f.pack(fill="x", padx=12, pady=4)
+        self.compose_text = scrolledtext.ScrolledText(f, height=4, wrap="word")
+        self.compose_text.pack(fill="x")
+        btn_row = ttk.Frame(f)
+        btn_row.pack(fill="x", pady=(4, 0))
+        ttk.Button(btn_row, text="发送信件", command=self._send_letter).pack(side="left", padx=(0, 6))
+        ttk.Button(btn_row, text="查看最近回信", command=self._show_last_reply).pack(side="left")
+        self.compose_status = tk.Label(f, text="", fg="#666", anchor="w")
+        self.compose_status.pack(fill="x", pady=(2, 0))
+        self.reply_text = scrolledtext.ScrolledText(f, height=5, state="disabled", wrap="word")
+        self.reply_text.pack(fill="x", pady=(2, 0))
+
+    def _send_letter(self):
+        content = self.compose_text.get("1.0", "end").strip()
+        if not content:
+            messagebox.showwarning("写信", "请先输入信件内容")
+            return
+        self.compose_status.config(text="正在发送...", fg="#b9770e")
+        self.root.update_idletasks()
+
+        def work():
+            try:
+                raw = self._proxy_post("/toy/letter/send", {"content": content, "material": {"stampId": "s1"}})
+                body = self._unwrap(raw)
+                letter_id = body.get("letterId")
+                if not letter_id:
+                    self.root.after(0, lambda: self.compose_status.config(
+                        text="发送失败: %s" % json.dumps(raw, ensure_ascii=False), fg="#c0392b"))
+                    return
+                self.root.after(0, lambda: self.compose_status.config(
+                    text="已发送 (letterId=%s)，等待林离回信..." % letter_id, fg="#2a7f2a"))
+                self._poll_reply(letter_id)
+            except urllib.error.HTTPError as e:
+                try:
+                    err = e.read().decode("utf-8", "replace")
+                except Exception:
+                    err = str(e)
+                self.root.after(0, lambda: self.compose_status.config(
+                    text="发送失败(HTTP %s): %s" % (e.code, err), fg="#c0392b"))
+            except Exception as e:
+                self.root.after(0, lambda: self.compose_status.config(
+                    text="发送失败: %s（代理是否已启动？）" % e, fg="#c0392b"))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _poll_reply(self, letter_id):
+        def work():
+            deadline = time.time() + 240
+            while time.time() < deadline:
+                try:
+                    raw = self._proxy_get("/toy/letter/detail?letterId=%s" % letter_id)
+                    body = self._unwrap(raw)
+                except Exception:
+                    time.sleep(3)
+                    continue
+                reply = body.get("replyText")
+                status = body.get("letterStatus")
+                if reply:
+                    self.root.after(0, lambda: self._set_reply("林离回信：\n" + reply, "#2a7f2a"))
+                    return
+                if status == 5:  # LETTER_STATUS_FAILED
+                    self.root.after(0, lambda: self._set_reply(
+                        "回信生成失败：请检查 OpenAI API Key 是否已配置且有效。", "#c0392b"))
+                    return
+                time.sleep(3)
+            self.root.after(0, lambda: self._set_reply(
+                "等待回信超时（仍在生成中，可点“查看最近回信”刷新）", "#b9770e"))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _set_reply(self, text, color):
+        self.reply_text.configure(state="normal")
+        self.reply_text.delete("1.0", "end")
+        self.reply_text.insert("1.0", text)
+        self.reply_text.configure(state="disabled", fg=color)
+
+    def _show_last_reply(self):
+        letters = load_letters_detail()
+        if not letters:
+            self._set_reply("（暂无信件）", "#666")
+            return
+        items = sorted(letters.values(), key=lambda x: x.get("created_at", 0), reverse=True)
+        last = items[0]
+        out = "【你的信】\n%s\n\n" % last.get("content", "")
+        if last.get("reply_text"):
+            out += "【林离回信】\n" + last["reply_text"]
+        else:
+            out += "【状态】%s（尚未回信）" % last.get("status", "")
+        self._set_reply(out, "#2a7f2a" if last.get("reply_text") else "#b9770e")
 
     def _sync_from_config(self):
         oa = self.cfg.data.get("openai", {})

@@ -952,7 +952,7 @@ class OliviaLetterProxy:
         )
         if is_dispatch:
             if DISPATCH_ENC_CONF:
-                data = {"enc_conf": DISPATCH_ENC_CONF}
+                data = {"enc_conf": DISPATCH_ENC_CONF, "encConf": DISPATCH_ENC_CONF, "conf": DISPATCH_ENC_CONF}
                 resp = {"code": 0, "message": "ok", "data": data}
             else:
                 resp = {
@@ -974,6 +974,10 @@ class OliviaLetterProxy:
             return
 
         if not is_letter_flow(flow):
+            if flow.request.path.startswith("/toy/"):
+                flow.response = json_response({"code": 0, "message": "", "data": {}})
+                ctx.log.info("benign 200 for non-letter /toy path %s" % flow.request.path)
+                return
             return
         ep = endpoint(flow.request.path)
         method = flow.request.method.upper()
