@@ -893,6 +893,7 @@ def generate_reply(letter_id, content):
             letter["replied_at"] = current_ts()
             letter["reply_text"] = reply
             letter["reply_type"] = REPLY_TYPE_TEXT
+            letter["unread"] = True
             save_data()
         remember("assistant", reply)
         compress_memory()
@@ -995,6 +996,17 @@ class OliviaLetterProxy:
             material = body.get("material") or {}
             stamp_id = (material.get("stampId") or "s1").strip()
             with state["lock"]:
+                max_daily = int(PERSONA.get("max_daily_letters", 3))
+                today = time.strftime("%Y-%m-%d", time.localtime())
+                sent_today = sum(1 for L in state["letters"].values()
+                                 if time.strftime("%Y-%m-%d", time.localtime(L["created_at"])) == today)
+                if sent_today >= max_daily:
+                    flow.response = json_response({
+                        "code": 429,
+                        "message": "今日信件已达上限（%d 封）" % max_daily,
+                        "data": {"remainingToday": 0},
+                    })
+                    return
                 state["seq"] += 1
                 letter_id = str(state["seq"])
                 state["letters"][letter_id] = {
@@ -1008,8 +1020,8 @@ class OliviaLetterProxy:
                     "reply_text": "",
                 }
                 save_data()
-            threading.Thread(target=generate_reply, args=(letter_id, content), daemon=True).start()
             remember("user", content)
+            threading.Thread(target=generate_reply, args=(letter_id, content), daemon=True).start()
             flow.response = json_response({"letterId": letter_id})
 
         elif method == "GET" and ep == "list":

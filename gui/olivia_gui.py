@@ -703,8 +703,10 @@ class OliviaGUI:
                 body = self._unwrap(raw)
                 letter_id = body.get("letterId")
                 if not letter_id:
+                    msg = raw.get("message") if isinstance(raw, dict) else ""
+                    tip = msg or json.dumps(raw, ensure_ascii=False)
                     self.root.after(0, lambda: self.compose_status.config(
-                        text="发送失败: %s" % json.dumps(raw, ensure_ascii=False), fg="#c0392b"))
+                        text="发送失败: %s" % tip, fg="#c0392b"))
                     return
                 self.root.after(0, lambda: self.compose_status.config(
                     text="已发送 (letterId=%s)，等待林离回信..." % letter_id, fg="#2a7f2a"))
@@ -1030,7 +1032,11 @@ class OliviaGUI:
                 text = line.decode("utf-8", errors="replace").rstrip()
             except Exception:
                 text = str(line)
-            self.root.after(0, self._log, text)
+            try:
+                self.root.after(0, self._log, text)
+            except (RuntimeError, tk.TclError):
+                # 窗口已销毁（用户关闭 GUI），后台线程不能再回调，直接停止读取
+                return
 
     def refresh_proxy_state(self):
         enabled, server = get_proxy_state()

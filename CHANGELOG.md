@@ -1,5 +1,12 @@
 # Olivia 来信拦截助手 — 更新日志
 
+## 未发布（2026-09-06）
+
+- **修复回信后不置未读（App 无未读红点）**：`generate_reply` 成功后只设 `status=REPLIED`，未设 `unread=True`，导致 `count_unread()` 恒为 0、`unread_count` 接口永远返回 0。现回信成功后置 `unread=True`，读信时由 `detail` 接口清掉（`isRead` 语义不变）。注：种子信件 2001 的 `unread` 是手写值，此前掩盖了该问题。
+- **修复每日上限形同虚设**：`send` 分支原先只校验 content 非空，`max_daily_letters` 仅在 `list` 接口算一个 `remainingToday` 返回给前端，后端完全不拦截，超限照样发信。现 `send` 在 `state["lock"]` 内统计当日已发信件数，超限时返回业务码 `429` + `message`「今日信件已达上限（N 封）」，不建信、不触发回信。HTTP 状态仍为 200（与现有 400/404 约定一致）。GUI 写信面板失败时优先显示 `message`，不再打印整段 JSON。
+- **修复发信记忆写入竞态**：`remember("user", content)` 原先写在回信线程 `start()` **之后**，靠默认 20 秒 `reply_delay_seconds` 侥幸躲过竞态；一旦把延迟调小，用户来信就进不了记忆上下文。现移到 `start()` 之前（仍在 `state["lock"]` 块外，`remember` 内部会自行加锁，移入会死锁）。
+- **修复 `_drain` 后台线程回调崩溃**：GUI 关闭后，mitmdump 输出读取线程仍调 `root.after(0, self._log, text)`，抛 `RuntimeError: main thread is not in main loop`。现捕获 `(RuntimeError, tk.TclError)` 并直接 return 停止读取。（与 1.2.11 修过的 `_enable_proxy_when_ready` 属同一类问题，那次只补了一处。）
+
 ## 1.2.10（2026-08-28）
 - **修复视频轮询误用 POST**：OpenAI `gen_video_openai` 与火山 Ark `gen_video_volc` 的异步任务轮询本应 `GET`，原误用 `http_json_request`（POST），现改为 `http_json_get`；MiniMax V1 轮询设计即 POST，保持不变
 - **修复 `resend` 重复记忆**：重发每封信都会 `remember("user", content)`，导致记忆随重发次数线性膨胀；现改为只在收信时记一次，重发不再重复写入
