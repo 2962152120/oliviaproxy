@@ -1,6 +1,6 @@
 # Olivia 来信拦截助手 — 更新日志
 
-## 未发布（2026-09-06）
+## 1.2.12（2026-09-06）
 
 - **修复回信后不置未读（App 无未读红点）**：`generate_reply` 成功后只设 `status=REPLIED`，未设 `unread=True`，导致 `count_unread()` 恒为 0、`unread_count` 接口永远返回 0。现回信成功后置 `unread=True`，读信时由 `detail` 接口清掉（`isRead` 语义不变）。注：种子信件 2001 的 `unread` 是手写值，此前掩盖了该问题。
 - **修复每日上限形同虚设**：`send` 分支原先只校验 content 非空，`max_daily_letters` 仅在 `list` 接口算一个 `remainingToday` 返回给前端，后端完全不拦截，超限照样发信。现 `send` 在 `state["lock"]` 内统计当日已发信件数，超限时返回业务码 `429` + `message`「今日信件已达上限（N 封）」，不建信、不触发回信。HTTP 状态仍为 200（与现有 400/404 约定一致）。GUI 写信面板失败时优先显示 `message`，不再打印整段 JSON。

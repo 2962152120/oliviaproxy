@@ -17,9 +17,16 @@ proxy_backup.txt
 *.exe
 release/
 
-# PyInstaller 临时目录
+# PyInstaller 临时目录（但保留构建脚本，见下方例外）
 build/
 dist/
+!build/make_zip.py
+!build/installer.iss
+
+# PyInstaller 产物
+*.spec
+build/pyi_env/
+build/pyi_work/
 
 # 测试/临时文件
 test_body.json
