@@ -7,7 +7,7 @@
 - 打包成 Windows 安装包 + 便携版交付
 
 ## 关键状态（截至 2026-09-06，版本 1.2.12）
-- **1.2.12 修复（2026-09-06，四处均已用 release runtime 跑真实代码验证）**：
+- **1.2.12 修复（2026-09-06，四处均已用 release runtime 跑真实代码验证；交付包元数据已用 scan_installer.py + 同目录 addon grep 二次验证）**：
   - 回信后置 `unread=True`，修复 `count_unread()` 恒为 0 / App 无未读红点（之前种子信件 2001 的手写 `unread` 掩盖了问题）
   - `send` 增加每日上限后端校验：锁内统计当日已发数，超限返回业务码 `429` + message，HTTP 仍 200（与 400/404 约定一致）；GUI 失败提示优先显示 `message`
   - `remember("user", content)` 移到回信线程 `start()` 之前，消除对 20s `reply_delay_seconds` 的竞态依赖（注意必须留在 `with state["lock"]` **外**，`remember` 内部会再加同一把非重入锁，移入会死锁）
